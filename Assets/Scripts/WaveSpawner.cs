@@ -6,6 +6,7 @@ using UnityEngine;
 /// 空の GameObject に付けるだけで動く(的や表示は起動時に自動で作る)。
 /// 的の出る位置は、OVRCameraRig の正面を中心にした扇形の範囲。
 /// </summary>
+[DisallowMultipleComponent]
 public class WaveSpawner : MonoBehaviour
 {
     [Header("ウェーブ")]
@@ -30,6 +31,7 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] Color targetColor = new Color(1f, 0.35f, 0.1f);
 
     Transform origin;
+    float floorY;
     Vector3 flatForward;
     TextMesh hud;
     int wave;
@@ -41,7 +43,7 @@ public class WaveSpawner : MonoBehaviour
 
     void Start()
     {
-        var rig = FindFirstObjectByType<OVRCameraRig>();
+        var rig = FindAnyObjectByType<OVRCameraRig>();
         if (rig == null)
         {
             Debug.LogError("WaveSpawner: シーンに OVRCameraRig が見つかりません。Camera Rig の Building Block を追加してください。");
@@ -50,8 +52,20 @@ public class WaveSpawner : MonoBehaviour
         }
 
         origin = rig.transform;
+        floorY = origin.position.y;
         flatForward = Vector3.ProjectOnPlane(origin.forward, Vector3.up).normalized;
         if (flatForward == Vector3.zero) flatForward = Vector3.forward;
+
+#if UNITY_EDITOR
+        // Editor でヘッドセットなしに動作確認するときは、カメラが床の高さになってしまうので、
+        // 立ったときの目の高さ(1.6m)まで持ち上げる。実機のビルドには影響しない。
+        if (!OVRManager.isHmdPresent)
+        {
+            origin.position += Vector3.up * 1.6f;
+            // 画面の外に的が出ないよう、左右の範囲も狭くする(頭を動かせないため)
+            arcHalfAngle = Mathf.Min(arcHalfAngle, 30f);
+        }
+#endif
 
         CreateHud();
         StartCoroutine(RunWaves());
@@ -91,7 +105,7 @@ public class WaveSpawner : MonoBehaviour
 
         Vector3 dir = Quaternion.AngleAxis(angle, Vector3.up) * flatForward;
         Vector3 pos = origin.position + dir * radius;
-        pos.y = origin.position.y + height;
+        pos.y = floorY + height;
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = "Target";
@@ -112,7 +126,7 @@ public class WaveSpawner : MonoBehaviour
     void CreateHud()
     {
         var go = new GameObject("WaveHud");
-        go.transform.position = origin.position + flatForward * 4f + Vector3.up * 2.6f;
+        go.transform.position = new Vector3(origin.position.x, floorY + 2.6f, origin.position.z) + flatForward * 4f;
         go.transform.rotation = Quaternion.LookRotation(flatForward);
 
         hud = go.AddComponent<TextMesh>();

@@ -55,3 +55,7 @@ sysinfo.txt
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Unity Performance Testing package (auto-generated)
+/[Aa]ssets/[Rr]esources/PerformanceTestRun*.json
+/[Aa]ssets/[Rr]esources/PerformanceTestRun*.json.meta

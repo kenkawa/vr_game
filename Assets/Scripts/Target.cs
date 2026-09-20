@@ -34,7 +34,7 @@ public class Target : MonoBehaviour
 
     void Start()
     {
-        var rig = FindFirstObjectByType<OVRCameraRig>();
+        var rig = FindAnyObjectByType<OVRCameraRig>();
         if (rig != null) head = rig.centerEyeAnchor;
     }
 

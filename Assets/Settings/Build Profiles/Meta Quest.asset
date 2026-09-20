@@ -243,10 +243,10 @@ MonoBehaviour:
     - line: '|   tvOSBundleVersion: 1.0'
     - line: '|   bundleVersion: 0.1.0'
     - line: '|   preloadedAssets:'
+    - line: '|   - {fileID: 11400000, guid: 207e2bb59b21d4bccaf050885dd90493, type: 2}'
+    - line: '|   - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}'
     - line: '|   - {fileID: -2111198997679485802, guid: 3fe29a19f942d49a2b0bacb105b0bb6a, type: 2}'
     - line: '|   - {fileID: 7597966420066291126, guid: 562eef5f2a5ca4450a1b9a8e7037b1ea, type: 2}'
-    - line: '|   - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}'
-    - line: '|   - {fileID: 11400000, guid: 207e2bb59b21d4bccaf050885dd90493, type: 2}'
     - line: '|   metroInputSource: 0'
     - line: '|   wsaTransparentSwapchain: 0'
     - line: '|   xboxOneDisableKinectGpuReservation: 1'
@@ -1082,7 +1082,7 @@ MonoBehaviour:
         m_ExportAsGoogleAndroidProject: 0
         m_DebugSymbolLevel: 1
         m_DebugSymbolFormat: 5
-        m_CurrentDeploymentTargetId: 1WMHH864LV1215
+        m_CurrentDeploymentTargetId: __builtin__target_default
         m_BuildType: 2
         m_LinkTimeOptimization: 1
         m_BuildAppBundle: 0
