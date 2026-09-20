@@ -24,14 +24,21 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] float maxHeight = 2.2f;
 
     [Header("的の性能")]
-    [SerializeField] float targetSize = 0.35f;
+    [Tooltip("最初のウェーブでの的の直径(m)。1 = 1m。")]
+    [SerializeField] float startTargetSize = 0.6f;
+    [Tooltip("ウェーブが進むごとに小さくなる量(m)。0 なら小さくならない。")]
+    [SerializeField] float sizeDecreasePerWave = 0.05f;
+    [Tooltip("これより小さくはならない(m)。")]
+    [SerializeField] float minTargetSize = 0.15f;
     [SerializeField] int targetHealth = 3;
     [Tooltip("0 なら動かない的。0 より大きいと近づいてくる。")]
     [SerializeField] float targetApproachSpeed = 0f;
     [SerializeField] Color targetColor = new Color(1f, 0.35f, 0.1f);
 
     Transform origin;
+    Transform eye;
     float floorY;
+    Vector3 spawnCenter;
     Vector3 flatForward;
     TextMesh hud;
     int wave;
@@ -52,9 +59,7 @@ public class WaveSpawner : MonoBehaviour
         }
 
         origin = rig.transform;
-        floorY = origin.position.y;
-        flatForward = Vector3.ProjectOnPlane(origin.forward, Vector3.up).normalized;
-        if (flatForward == Vector3.zero) flatForward = Vector3.forward;
+        eye = rig.centerEyeAnchor;
 
 #if UNITY_EDITOR
         // Editor でヘッドセットなしに動作確認するときは、カメラが床の高さになってしまうので、
@@ -66,6 +71,9 @@ public class WaveSpawner : MonoBehaviour
             arcHalfAngle = Mathf.Min(arcHalfAngle, 30f);
         }
 #endif
+
+        UpdateSpawnFrame();
+        Debug.Log($"[WaveSpawner] 開始: 床の高さ={floorY:0.00}, 基準位置={spawnCenter}, HMDあり={OVRManager.isHmdPresent}");
 
         CreateHud();
         StartCoroutine(RunWaves());
@@ -80,8 +88,10 @@ public class WaveSpawner : MonoBehaviour
         {
             wave++;
             int count = firstWaveCount + (wave - 1) * countIncreasePerWave;
+            UpdateSpawnFrame();
+            PlaceHud();
             SpawnWave(count);
-            SetHud($"WAVE {wave}\nSCORE {score}");
+            SetHud($"WAVE {wave}\nSCORE {score}\nSIZE {CurrentTargetSize() * 100f:0} cm");
 
             // 全部倒すまで待つ
             while (aliveCount > 0) yield return null;
@@ -94,7 +104,42 @@ public class WaveSpawner : MonoBehaviour
     void SpawnWave(int count)
     {
         aliveCount = count;
+        Debug.Log($"[WaveSpawner] WAVE {wave}: 的を {count} 個出します(直径 {CurrentTargetSize():0.00} m)。目の位置={eye.position}, 向き={eye.forward}");
         for (int i = 0; i < count; i++) SpawnTarget();
+    }
+
+    /// <summary>
+    /// 的を出す基準(中心・床の高さ・正面)を決める。
+    /// 実機ではカメラ台(リグ)が基準。
+    /// Editor でヘッドセットがないときは、カメラの実際の位置と向きが基準になる
+    /// (ヘッドセットなしだと、カメラの高さや向きが安定しないため)。
+    /// </summary>
+    void UpdateSpawnFrame()
+    {
+        Vector3 center = origin.position;
+        float floor = origin.position.y;
+        Vector3 forward = origin.forward;
+
+#if UNITY_EDITOR
+        if (!OVRManager.isHmdPresent && eye != null)
+        {
+            center = eye.position;
+            floor = eye.position.y - 1.6f;   // 目の高さが 1.6m になる床を仮定
+            forward = eye.forward;
+        }
+#endif
+
+        spawnCenter = center;
+        floorY = floor;
+        flatForward = Vector3.ProjectOnPlane(forward, Vector3.up).normalized;
+        if (flatForward == Vector3.zero) flatForward = Vector3.forward;
+    }
+
+    /// <summary>今のウェーブでの的の直径(m)。ウェーブが進むほど小さくなる。</summary>
+    float CurrentTargetSize()
+    {
+        float size = startTargetSize - (wave - 1) * sizeDecreasePerWave;
+        return Mathf.Max(minTargetSize, size);
     }
 
     void SpawnTarget()
@@ -104,14 +149,15 @@ public class WaveSpawner : MonoBehaviour
         float height = Random.Range(minHeight, maxHeight);
 
         Vector3 dir = Quaternion.AngleAxis(angle, Vector3.up) * flatForward;
-        Vector3 pos = origin.position + dir * radius;
+        Vector3 pos = spawnCenter + dir * radius;
         pos.y = floorY + height;
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = "Target";
         go.transform.position = pos;
-        go.transform.localScale = Vector3.one * targetSize;
+        go.transform.localScale = Vector3.one * CurrentTargetSize();
 
+        Debug.Log($"[WaveSpawner] 的を生成: 位置={pos}");
         var target = go.AddComponent<Target>();
         target.Configure(targetHealth, targetApproachSpeed, targetColor);
     }
@@ -120,14 +166,12 @@ public class WaveSpawner : MonoBehaviour
     {
         aliveCount--;
         score += 10;
-        SetHud($"WAVE {wave}\nSCORE {score}");
+        SetHud($"WAVE {wave}\nSCORE {score}\nSIZE {CurrentTargetSize() * 100f:0} cm");
     }
 
     void CreateHud()
     {
         var go = new GameObject("WaveHud");
-        go.transform.position = new Vector3(origin.position.x, floorY + 2.6f, origin.position.z) + flatForward * 4f;
-        go.transform.rotation = Quaternion.LookRotation(flatForward);
 
         hud = go.AddComponent<TextMesh>();
         hud.anchor = TextAnchor.MiddleCenter;
@@ -139,6 +183,16 @@ public class WaveSpawner : MonoBehaviour
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         hud.font = font;
         go.GetComponent<MeshRenderer>().sharedMaterial = font.material;
+
+        PlaceHud();
+    }
+
+    /// <summary>得点表示を、基準の正面 4m・高さ 2.6m の位置に置く。</summary>
+    void PlaceHud()
+    {
+        if (hud == null) return;
+        hud.transform.position = new Vector3(spawnCenter.x, floorY + 2.6f, spawnCenter.z) + flatForward * 4f;
+        hud.transform.rotation = Quaternion.LookRotation(flatForward);
     }
 
     void SetHud(string text)
