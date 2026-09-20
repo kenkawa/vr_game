@@ -3,66 +3,59 @@ using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// 撃たれると体力が減り、0 になると消える的。
-/// approachSpeed を 0 より大きくすると、プレイヤーの頭に向かって近づいてくる敵になる。
+/// 撃たれると体力が減り、0 になると消える、当たり判定つきの敵。
+/// 見た目(子オブジェクト)を作り終えたあとに Configure を呼んで、体力などを設定する。
+/// 撃った弾の判定は、この Target が付いたオブジェクト(またはその子)のコライダーに当たると成立する。
 /// </summary>
-[RequireComponent(typeof(Collider))]
 public class Target : MonoBehaviour
 {
-    /// <summary>的が倒されたときに通知される。</summary>
+    /// <summary>敵が倒されたときに通知される。</summary>
     public static event Action<Target> Killed;
 
-    [SerializeField] int maxHealth = 3;
-    [SerializeField] Color normalColor = new Color(1f, 0.35f, 0.1f);
+    [SerializeField] float maxHealth = 3f;
     [SerializeField] Color hitColor = Color.white;
-    [Tooltip("近づいてくる速さ(m/秒)。0 なら動かない。")]
-    [SerializeField] float approachSpeed = 0f;
-    [Tooltip("頭からこの距離まで近づいたら止まる。")]
-    [SerializeField] float stopDistance = 1.5f;
+    [Tooltip("倒したときの得点。")]
+    [SerializeField] int scoreValue = 10;
+    [Tooltip("倒したとき、アイテムが出る位置の高さ(足元から、m)。")]
+    [SerializeField] float dropHeight = 1f;
 
-    int health;
+    float health;
     bool dying;
-    Renderer rend;
-    Transform head;
+    Renderer[] renderers;
+    Color[] baseColors;
+
+    public bool IsDead => dying;
+    public int ScoreValue => scoreValue;
+    public Vector3 DropPoint => transform.position + Vector3.up * dropHeight;
 
     void Awake()
     {
         health = maxHealth;
-        rend = GetComponent<Renderer>();
-        ApplyColor(normalColor);
     }
 
-    void Start()
-    {
-        var rig = FindAnyObjectByType<OVRCameraRig>();
-        if (rig != null) head = rig.centerEyeAnchor;
-    }
-
-    void Update()
-    {
-        if (dying || approachSpeed <= 0f || head == null) return;
-
-        Vector3 toHead = head.position - transform.position;
-        if (toHead.magnitude <= stopDistance) return;
-        transform.position += toHead.normalized * (approachSpeed * Time.deltaTime);
-    }
-
-    /// <summary>生成した側から設定を渡すためのメソッド。</summary>
-    public void Configure(int hp, float speed, Color color)
+    /// <summary>生成した側から、体力・得点・アイテムの出る高さを渡す。見た目を作り終えたあとに呼ぶ。</summary>
+    public void Configure(float hp, int score, float dropHeightMeters)
     {
         maxHealth = hp;
         health = hp;
-        approachSpeed = speed;
-        normalColor = color;
-        ApplyColor(normalColor);
+        scoreValue = score;
+        dropHeight = dropHeightMeters;
+        CacheRenderers();
     }
 
-    public void TakeDamage(int amount)
+    void CacheRenderers()
+    {
+        renderers = GetComponentsInChildren<Renderer>();
+        baseColors = new Color[renderers.Length];
+        for (int i = 0; i < renderers.Length; i++) baseColors[i] = renderers[i].material.color;
+    }
+
+    public void TakeDamage(float amount)
     {
         if (dying) return;
 
         health -= amount;
-        if (health <= 0)
+        if (health <= 0f)
         {
             StartCoroutine(Die());
         }
@@ -74,20 +67,20 @@ public class Target : MonoBehaviour
 
     IEnumerator HitFlash()
     {
-        ApplyColor(hitColor);
+        SetAllColors(hitColor);
         yield return new WaitForSeconds(0.06f);
-        if (!dying) ApplyColor(normalColor);
+        if (!dying) RestoreColors();
     }
 
     IEnumerator Die()
     {
         dying = true;
-        GetComponent<Collider>().enabled = false;
+        foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
         Killed?.Invoke(this);
 
-        // 0.15 秒で小さくなって消える
+        // 0.2 秒で小さくなって消える
         Vector3 startScale = transform.localScale;
-        const float duration = 0.15f;
+        const float duration = 0.2f;
         float t = 0f;
         while (t < duration)
         {
@@ -98,8 +91,18 @@ public class Target : MonoBehaviour
         Destroy(gameObject);
     }
 
-    void ApplyColor(Color c)
+    void SetAllColors(Color c)
     {
-        if (rend != null) rend.material.color = c;
+        if (renderers == null) return;
+        foreach (var r in renderers) if (r != null) r.material.color = c;
+    }
+
+    void RestoreColors()
+    {
+        if (renderers == null) return;
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] != null) renderers[i].material.color = baseColors[i];
+        }
     }
 }
