@@ -1,0 +1,5 @@
+/Volumes/Predator_2TB/Unity/Projects/My project/.utmp/RelWithDebInfo/3u16662h/arm64-v8a/CMakeFiles/edit_cache.dir
+/Volumes/Predator_2TB/Unity/Projects/My project/.utmp/RelWithDebInfo/3u16662h/arm64-v8a/CMakeFiles/rebuild_cache.dir
+/Volumes/Predator_2TB/Unity/Projects/My project/.utmp/RelWithDebInfo/3u16662h/arm64-v8a/GameActivity/CMakeFiles/game.dir
+/Volumes/Predator_2TB/Unity/Projects/My project/.utmp/RelWithDebInfo/3u16662h/arm64-v8a/GameActivity/CMakeFiles/edit_cache.dir
+/Volumes/Predator_2TB/Unity/Projects/My project/.utmp/RelWithDebInfo/3u16662h/arm64-v8a/GameActivity/CMakeFiles/rebuild_cache.dir
