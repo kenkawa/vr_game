@@ -26,7 +26,7 @@ public static class PlayerView
 
     const float EditorEyeHeight = 1.6f;
     /// <summary>Editor の固定カメラを、砦の下の敵が見えるように、少し下へ向ける角度(度)。</summary>
-    const float EditorPitchDegrees = 20f;
+    const float EditorPitchDegrees = 25f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetState()

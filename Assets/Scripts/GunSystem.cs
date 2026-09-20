@@ -1,4 +1,7 @@
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEngine.InputSystem;
+#endif
 
 /// <summary>
 /// 左右 2 丁の銃をまとめて管理する。
@@ -79,9 +82,20 @@ public class GunSystem : MonoBehaviour
     static readonly Color AmmoUpColor = new Color(0.4f, 1f, 0.5f);
     static readonly Color ComboColor = new Color(0.5f, 1f, 1f);
 
+    // Editor でヘッドセットがないときの、左右の銃の間隔(片側ぶん、m)。
+    // ふだんは離れていて、Space キーを押している間だけ、中央に寄って「両手を合わせた」状態になる。
+    const float EditorApartHalfGap = 0.38f;
+    const float EditorTogetherHalfGap = 0.05f;
+    /// <summary>両手撃ちの判定を、離した直後もこの秒数だけ保つ(手がずれて撃ち損ねないように)。</summary>
+    const float ComboGraceSeconds = 0.15f;
+
+    /// <summary>Editor の動作確認中の、左右の銃の間隔(片側ぶん、m)。</summary>
+    public float EditorHandHalfGap { get; private set; } = EditorApartHalfGap;
+
     VRGun left;
     VRGun right;
     float emptyTimer;
+    float togetherUntil;
 
     void Awake()
     {
@@ -111,6 +125,10 @@ public class GunSystem : MonoBehaviour
 
         ApplyGradeVisuals();
         RefreshLabels();
+        if (PlayerView.IsEditorSimulation)
+        {
+            Debug.Log("[GunSystem] Editor の操作: マウス左ボタン=右手の銃 / マウス右ボタンまたは Z キー=左手の銃 / Space を押している間=両手を合わせる");
+        }
         Debug.Log($"[GunSystem] 左右の銃を作りました(残弾 {Ammo}/{maxAmmo}、グレード {Grade})");
     }
 
@@ -122,6 +140,20 @@ public class GunSystem : MonoBehaviour
         return gun;
     }
 
+    void Update()
+    {
+#if UNITY_EDITOR
+        // Editor でヘッドセットがないとき、Space を押している間だけ、左右の銃を中央に寄せる
+        if (PlayerView.IsEditorSimulation && editorMouseFallback)
+        {
+            Keyboard keyboard = Keyboard.current;
+            bool together = keyboard != null && keyboard.spaceKey.isPressed;
+            float goal = together ? EditorTogetherHalfGap : EditorApartHalfGap;
+            EditorHandHalfGap = Mathf.MoveTowards(EditorHandHalfGap, goal, 6f * Time.deltaTime);
+        }
+#endif
+    }
+
     // 銃の Update(トリガーや狙いの読み取り)が全部終わってから判断するため、LateUpdate で処理する
     void LateUpdate()
     {
@@ -131,7 +163,9 @@ public class GunSystem : MonoBehaviour
         TryBeginCharge(right);
 
         // 両手を近づけて、両方チャージしているときは、両手撃ちの状態
-        bool together = left.Charging && right.Charging && HandsTogether();
+        if (left.Charging && right.Charging && HandsTogether()) togetherUntil = Time.time + ComboGraceSeconds;
+        if (!left.Charging && !right.Charging) togetherUntil = 0f;
+        bool together = left.Charging && right.Charging && Time.time < togetherUntil;
         left.SetComboGlow(together);
         right.SetComboGlow(together);
 
@@ -168,10 +202,8 @@ public class GunSystem : MonoBehaviour
 
     bool HandsTogether()
     {
-        // Editor では、マウスの左右ボタンを同時に押している間は「両手が合わさっている」とみなす
-        if (PlayerView.IsEditorSimulation) return true;
-
-        return Vector3.Distance(PlayerView.LeftHand.position, PlayerView.RightHand.position) <= comboDistance;
+        // 実機でも Editor でも、2 丁の銃の実際の距離で判定する
+        return Vector3.Distance(left.Origin, right.Origin) <= comboDistance;
     }
 
     // ---- 撃つ ----
@@ -200,6 +232,10 @@ public class GunSystem : MonoBehaviour
         string hitName = gun.HasHit ? gun.LastHit.collider.name : "なし";
         Debug.Log($"[GunSystem] {hand}手で発射: チャージ {charge01:0.00}、威力 {damage:0.0}、命中 {hitName}、残弾 {Ammo}");
 
+        Vector3 muzzle = gun.Muzzle;
+        Vector3 end = gun.HasHit ? gun.LastHit.point : muzzle + gun.Forward * 100f;
+        ShotEffects.Fire(muzzle, end, gun.HasHit, charge01);
+
         if (gun.HasHit) DamageTarget(gun.LastHit.collider, damage);
     }
 
@@ -209,6 +245,7 @@ public class GunSystem : MonoBehaviour
         float chargeL = left.EndCharge();
         float chargeR = right.EndCharge();
 
+        togetherUntil = 0f;
         // 片方がまだトリガーを引いていても、そのまま続けてチャージしないようにする
         left.NeedsRelease = true;
         right.NeedsRelease = true;
@@ -229,9 +266,9 @@ public class GunSystem : MonoBehaviour
 
         RaycastHit hit;
         bool hasHit = Physics.SphereCast(origin, comboBeamRadius, direction, out hit, range, hitMask, QueryTriggerInteraction.Ignore);
-        float length = hasHit ? hit.distance : 20f;
+        float length = hasHit ? hit.distance : 100f;
 
-        ShowBeam(origin, direction, Mathf.Min(length, 20f));
+        ShowBeam(origin, direction, length);
 
         float bigger = Mathf.Max(chargeL, chargeR);
         left.PlayShotFeedback(bigger, fireInterval * 2f);
@@ -248,17 +285,10 @@ public class GunSystem : MonoBehaviour
         if (target != null) target.TakeDamage(damage);
     }
 
-    /// <summary>両手撃ちの弾の軌跡を、太い光の線で一瞬だけ見せる。</summary>
+    /// <summary>両手撃ちの弾の軌跡を、太い光の線で見せる(少しずつ細くなって消える)。</summary>
     static void ShowBeam(Vector3 origin, Vector3 direction, float length)
     {
-        var beam = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        beam.name = "ComboBeam";
-        Destroy(beam.GetComponent<Collider>());
-        beam.transform.position = origin + direction * (length * 0.5f);
-        beam.transform.rotation = Quaternion.LookRotation(direction);
-        beam.transform.localScale = new Vector3(0.05f, 0.05f, length);
-        beam.GetComponent<Renderer>().material.color = ComboColor;
-        Destroy(beam, 0.15f);
+        ShotEffects.Trail(origin, origin + direction * length, 0.08f, ComboColor, 0.5f);
     }
 
     // ---- 残弾・グレード・アイテム ----
@@ -347,6 +377,13 @@ public class GunSystem : MonoBehaviour
         }
 
         if (drop.HasValue) ItemPickup.Spawn(drop.Value, target.DropPoint);
+
+        // 頑丈な敵・巨大な敵は、追加でアイテムを落とす(グレードアップ → 残弾回復 の順)
+        for (int i = 0; i < target.BonusDrops; i++)
+        {
+            ItemKind bonus = i % 2 == 0 ? ItemKind.Grade : ItemKind.Ammo;
+            ItemPickup.Spawn(bonus, target.DropPoint + Random.insideUnitSphere * 0.5f);
+        }
     }
 
     void ApplyGradeVisuals()

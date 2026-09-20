@@ -22,8 +22,9 @@ public class VRGun : MonoBehaviour
     const float MuzzleZ = 0.24f;
 
     // Editor の動作確認中に、銃を置くカメラからの相対位置(右・下・前)
-    static readonly Vector3 EditorRightOffset = new Vector3(0.16f, -0.14f, 0.40f);
-    static readonly Vector3 EditorLeftOffset = new Vector3(-0.16f, -0.14f, 0.40f);
+    // 横の位置は、GunSystem.EditorHandHalfGap(ふだんは離れ、Space で中央に寄る)
+    const float EditorDown = -0.2f;
+    const float EditorForward = 0.5f;
 
     static readonly Color AimColor = new Color(1f, 0.1f, 0.1f);
     static readonly Color AimChargedColor = new Color(1f, 0.6f, 0.1f);
@@ -82,6 +83,8 @@ public class VRGun : MonoBehaviour
     public RaycastHit LastHit;
 
     public Vector3 Origin => transform.position;
+    /// <summary>銃口(先端)の位置。</summary>
+    public Vector3 Muzzle => transform.TransformPoint(0f, 0f, MuzzleZ);
     public Vector3 Forward => transform.forward;
 
     /// <summary>チャージの量(0〜1)。</summary>
@@ -256,7 +259,16 @@ public class VRGun : MonoBehaviour
         if (mouse == null || cam == null) return false;
 
         ray = cam.ScreenPointToRay(mouse.position.ReadValue());
-        held = isRight ? mouse.leftButton.isPressed : mouse.rightButton.isPressed;
+        Keyboard keyboard = Keyboard.current;
+        if (isRight)
+        {
+            held = mouse.leftButton.isPressed;
+        }
+        else
+        {
+            // 左手の銃:マウスの右ボタン、または Z キー(右クリックが効かない環境向け)
+            held = mouse.rightButton.isPressed || (keyboard != null && keyboard.zKey.isPressed);
+        }
         return true;
 #else
         return false;
@@ -267,7 +279,8 @@ public class VRGun : MonoBehaviour
     void PoseGunForEditor(Vector3 aimPoint)
     {
         Transform cam = PlayerView.Eye;
-        Vector3 pos = cam.TransformPoint(isRight ? EditorRightOffset : EditorLeftOffset);
+        float side = isRight ? system.EditorHandHalfGap : -system.EditorHandHalfGap;
+        Vector3 pos = cam.TransformPoint(new Vector3(side, EditorDown, EditorForward));
         Vector3 toAim = aimPoint - pos;
         if (toAim.sqrMagnitude < 0.0001f) toAim = cam.forward;
         transform.SetPositionAndRotation(pos, Quaternion.LookRotation(toAim));

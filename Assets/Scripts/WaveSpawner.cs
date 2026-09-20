@@ -15,7 +15,7 @@ public class WaveSpawner : MonoBehaviour
     [Header("砦")]
     [SerializeField] float fortMaxHealth = 100f;
     [Tooltip("砦の高さ(m)。プレイヤーは、この高さの上に立つ。")]
-    [SerializeField] float fortHeight = 3f;
+    [SerializeField] float fortHeightMeters = 6f;
     [Tooltip("ウェーブをクリアするたびに、砦の耐久値が回復する量。")]
     [SerializeField] float repairPerWave = 10f;
 
@@ -41,8 +41,8 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] float flyingSpawnMaxDistance = 55f;
     [Tooltip("正面から左右にこの角度(度)まで")]
     [SerializeField] float arcHalfAngle = 45f;
-    [Tooltip("地上の敵が、砦の壁からどれだけ手前で止まるか(m)")]
-    [SerializeField] float groundStopDistance = 1.8f;
+    [Tooltip("地上の敵が、外柵(砦の壁の 3.5m 手前)からどれだけ手前で止まるか(m)")]
+    [SerializeField] float groundStopFromFence = 0.9f;
 
     [Header("難易度(ウェーブが進むごとの変化)")]
     [Tooltip("最初のウェーブでの敵の大きさ(1 = 標準)。")]
@@ -56,9 +56,27 @@ public class WaveSpawner : MonoBehaviour
     [Tooltip("ウェーブごとに、体力が増える割合(0.08 = 8%)。")]
     [SerializeField] float healthIncreasePerWave = 0.08f;
 
-    [Header("敵の性能")]
+    [Header("敵の性能(標準)")]
     [SerializeField] EnemyStats groundStats = new EnemyStats(3f, 2.5f, 3f, 1.6f, 10);
     [SerializeField] EnemyStats flyingStats = new EnemyStats(2f, 5f, 2f, 2f, 15);
+
+    [Header("地上の敵の種類")]
+    [Tooltip("頑丈な敵(鎧のゴブリン)が出始めるウェーブ。")]
+    [SerializeField] int armoredStartWave = 3;
+    [Tooltip("地上の敵のうち、頑丈な敵になる割合(0〜1)。")]
+    [Range(0f, 1f)]
+    [SerializeField] float armoredShare = 0.25f;
+    [Tooltip("俊敏な敵(小さくて速いゴブリン)が出始めるウェーブ。")]
+    [SerializeField] int runnerStartWave = 2;
+    [Range(0f, 1f)]
+    [SerializeField] float runnerShare = 0.25f;
+    [Tooltip("巨大な敵(オーガ)が最初に出るウェーブ。")]
+    [SerializeField] int giantStartWave = 4;
+    [Tooltip("巨大な敵が、このウェーブ数ごとに 1 体出る。0 なら出ない。")]
+    [SerializeField] int giantEveryNWaves = 2;
+    [SerializeField] EnemyStats armoredStats = new EnemyStats(9f, 1.6f, 4f, 1.8f, 30, 1.15f, 1);
+    [SerializeField] EnemyStats giantStats = new EnemyStats(30f, 1f, 12f, 2.5f, 100, 2.4f, 2);
+    [SerializeField] EnemyStats runnerStats = new EnemyStats(1.5f, 5.5f, 2f, 1f, 20, 0.7f, 0);
 
     Fort fort;
     TextMesh hud;
@@ -100,7 +118,7 @@ public class WaveSpawner : MonoBehaviour
 
         var fortObject = new GameObject("Fort");
         fort = fortObject.AddComponent<Fort>();
-        fort.Build(fortMaxHealth, fortHeight);
+        fort.Build(fortMaxHealth, fortHeightMeters);
         fort.Damaged += OnFortDamaged;
         fort.Broken += OnFortBroken;
 
@@ -149,6 +167,28 @@ public class WaveSpawner : MonoBehaviour
             (kinds[i], kinds[j]) = (kinds[j], kinds[i]);
         }
 
+        // 地上の敵の種類を決める(巨大な敵は、該当のウェーブに 1 体)
+        var variants = new EnemyVariant[count];
+        bool giantWave = giantEveryNWaves > 0 && wave >= giantStartWave && (wave - giantStartWave) % giantEveryNWaves == 0;
+        bool giantPlaced = false;
+        for (int i = 0; i < count; i++)
+        {
+            if (kinds[i] != EnemyKind.Ground) continue;
+
+            if (giantWave && !giantPlaced)
+            {
+                variants[i] = EnemyVariant.Giant;
+                giantPlaced = true;
+                continue;
+            }
+
+            float armored = wave >= armoredStartWave ? armoredShare : 0f;
+            float runner = wave >= runnerStartWave ? runnerShare : 0f;
+            float roll = Random.value;
+            if (roll < armored) variants[i] = EnemyVariant.Armored;
+            else if (roll < armored + runner) variants[i] = EnemyVariant.Runner;
+        }
+
         // 地上の敵が壁の前に並ぶ位置(横に 8 か所。あふれたら 2 列目)
         const int slotCount = 8;
         int[] slotOrder = new int[slotCount];
@@ -170,7 +210,7 @@ public class WaveSpawner : MonoBehaviour
             {
                 int slot = slotOrder[groundIndex % slotCount];
                 int row = groundIndex / slotCount;
-                SpawnGround(slot, slotCount, row);
+                SpawnGround(slot, slotCount, row, variants[i]);
                 groundIndex++;
             }
             else
@@ -182,14 +222,19 @@ public class WaveSpawner : MonoBehaviour
         }
     }
 
-    void SpawnGround(int slot, int slotCount, int row)
+    void SpawnGround(int slot, int slotCount, int row, EnemyVariant variant)
     {
+        EnemyStats stats = groundStats;
+        if (variant == EnemyVariant.Armored) stats = armoredStats;
+        else if (variant == EnemyVariant.Giant) stats = giantStats;
+        else if (variant == EnemyVariant.Runner) stats = runnerStats;
+
         float span = Fort.HalfWidth - 0.8f;
         float x = Mathf.Lerp(-span, span, slot / (float)(slotCount - 1));
 
-        float stopForward = Fort.FaceForward + groundStopDistance + row * 1.2f;
+        float stopForward = Fort.PalisadeForward + groundStopFromFence * Mathf.Max(1f, stats.sizeMultiplier) + row * 1.2f;
         Vector3 stand = fort.Point(x, fort.GroundY, stopForward);
-        Vector3 look = fort.Point(x, fort.GroundY + 1f, Fort.FaceForward);
+        Vector3 look = fort.Point(x, fort.GroundY + 1f, Fort.PalisadeForward);
 
         float angle = Random.Range(-arcHalfAngle, arcHalfAngle);
         float distance = Random.Range(groundSpawnMinDistance, groundSpawnMaxDistance);
@@ -197,7 +242,8 @@ public class WaveSpawner : MonoBehaviour
         Vector3 flat = new Vector3(PlayerView.Center.x, 0f, PlayerView.Center.z) + dir * distance;
         Vector3 spawn = new Vector3(flat.x, fort.GroundY, flat.z);
 
-        Enemy.Spawn(EnemyKind.Ground, spawn, stand, look, CurrentScale(), CurrentSpeedMultiplier(), CurrentHealthMultiplier(), groundStats);
+        float size = CurrentScale() * stats.sizeMultiplier;
+        Enemy.Spawn(EnemyKind.Ground, spawn, stand, look, size, CurrentSpeedMultiplier(), CurrentHealthMultiplier(), stats, variant);
     }
 
     void SpawnFlying()
@@ -254,7 +300,7 @@ public class WaveSpawner : MonoBehaviour
     {
         Debug.Log($"[WaveSpawner] GAME OVER: WAVE {wave}, SCORE {score}");
 
-        foreach (var enemy in FindObjectsByType<Enemy>(FindObjectsSortMode.None)) Destroy(enemy.gameObject);
+        foreach (var enemy in FindObjectsByType<Enemy>()) Destroy(enemy.gameObject);
 
         hud.color = new Color(1f, 0.35f, 0.3f);
         hud.text = $"GAME OVER\nWAVE {wave}   SCORE {score}\n\nHOLD BOTH TRIGGERS\nTO RETRY";
@@ -278,8 +324,8 @@ public class WaveSpawner : MonoBehaviour
     void CreateHud()
     {
         hud = HudText.Create("WaveHud", null, 64, 0.05f, Color.white);
-        hud.transform.position = new Vector3(PlayerView.Center.x, PlayerView.FloorY + 2.2f, PlayerView.Center.z)
-                                 + PlayerView.FlatForward * 5f;
+        hud.transform.position = new Vector3(PlayerView.Center.x, PlayerView.FloorY + 1.8f, PlayerView.Center.z)
+                                 + PlayerView.FlatForward * 4.5f;
         hud.transform.rotation = Quaternion.LookRotation(PlayerView.FlatForward);
     }
 

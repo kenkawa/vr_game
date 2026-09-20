@@ -27,6 +27,10 @@ public class Target : MonoBehaviour
     public bool IsDead => dying;
     public int ScoreValue => scoreValue;
     public Vector3 DropPoint => transform.position + Vector3.up * dropHeight;
+    /// <summary>倒したときに、追加で落とすアイテムの数(頑丈な敵・巨大な敵)。</summary>
+    public int BonusDrops { get; private set; }
+    /// <summary>残りの体力の割合(0〜1)。</summary>
+    public float HealthFraction => maxHealth > 0f ? Mathf.Clamp01(health / maxHealth) : 0f;
 
     void Awake()
     {
@@ -34,8 +38,9 @@ public class Target : MonoBehaviour
     }
 
     /// <summary>生成した側から、体力・得点・アイテムの出る高さを渡す。見た目を作り終えたあとに呼ぶ。</summary>
-    public void Configure(float hp, int score, float dropHeightMeters)
+    public void Configure(float hp, int score, float dropHeightMeters, int bonusDrops = 0)
     {
+        BonusDrops = bonusDrops;
         maxHealth = hp;
         health = hp;
         scoreValue = score;
@@ -76,6 +81,7 @@ public class Target : MonoBehaviour
     {
         dying = true;
         foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
+        KillEffects.Play(DropPoint, baseColors, transform.lossyScale.x, scoreValue);
         Killed?.Invoke(this);
 
         // 0.2 秒で小さくなって消える

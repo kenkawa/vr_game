@@ -16,6 +16,8 @@ public class Fort : MonoBehaviour
 
     /// <summary>足元の中心から、正面の壁までの距離(m)。</summary>
     public const float FaceForward = 1f;
+    /// <summary>足元の中心から、外柵(木の柵)までの距離(m)。地上の敵はこの柵の前で止まる。</summary>
+    public const float PalisadeForward = FaceForward + 3.5f;
     /// <summary>砦の幅の半分(m)。</summary>
     public const float HalfWidth = 4.8f;
 
@@ -25,10 +27,11 @@ public class Fort : MonoBehaviour
     static readonly Color DarkStoneColor = new Color(0.42f, 0.42f, 0.46f);
     static readonly Color FloorColor = new Color(0.68f, 0.66f, 0.62f);
     static readonly Color WoodColor = new Color(0.35f, 0.22f, 0.12f);
+    static readonly Color DarkWoodColor = new Color(0.25f, 0.15f, 0.08f);
     static readonly Color DamageColor = new Color(1f, 0.25f, 0.2f);
 
     float maxHealth = 100f;
-    float height = 3f;
+    float height = 6f;
     Vector3 right;
     Quaternion facing;
     readonly List<Renderer> stone = new List<Renderer>();
@@ -126,6 +129,49 @@ public class Fort : MonoBehaviour
 
         // 正面の門
         AddBlock("Gate", PrimitiveType.Cube, Point(0f, ground + 1.3f, FaceForward + 0.05f), new Vector3(2.2f, 2.6f, 0.2f), WoodColor, false, false);
+
+        // 外柵(木の柵)。地上の敵は、この柵の前まで来て、柵と砦を攻撃する
+        float fenceHalf = w + 1.5f;
+        for (float px = -fenceHalf; px <= fenceHalf + 0.01f; px += 0.55f)
+        {
+            float postHeight = 1.5f + 0.4f * Mathf.Abs(Mathf.Sin(px * 12.9898f));
+            AddBlock("FencePost", PrimitiveType.Cylinder, Point(px, ground + postHeight * 0.5f, PalisadeForward),
+                new Vector3(0.3f, postHeight * 0.5f, 0.3f), WoodColor, true, false);
+        }
+        AddBlock("FenceBeamLow", PrimitiveType.Cube, Point(0f, ground + 0.5f, PalisadeForward - 0.17f),
+            new Vector3(fenceHalf * 2f + 0.4f, 0.12f, 0.1f), DarkWoodColor, true, false);
+        AddBlock("FenceBeamHigh", PrimitiveType.Cube, Point(0f, ground + 1.1f, PalisadeForward - 0.17f),
+            new Vector3(fenceHalf * 2f + 0.4f, 0.12f, 0.1f), DarkWoodColor, true, false);
+
+        BuildTrees(ground);
+    }
+
+    /// <summary>遠近感と高さが分かるように、周りに木を立てる(敵の通り道と道は避ける。毎回同じ配置)。</summary>
+    void BuildTrees(float ground)
+    {
+        var rng = new System.Random(20260920);
+        int placed = 0;
+        for (int attempt = 0; attempt < 600 && placed < 40; attempt++)
+        {
+            float x = (float)(rng.NextDouble() * 180.0 - 90.0);
+            float f = (float)(rng.NextDouble() * 145.0 - 15.0);
+
+            bool outsideEnemyCone = Mathf.Abs(x) > f * 1.1f + 8f;
+            bool beyondSpawn = f > 60f;
+            if (!outsideEnemyCone && !beyondSpawn) continue;
+            if (Mathf.Abs(x) < 8f && f < 12f) continue;     // 砦の真後ろと真正面
+            if (Mathf.Abs(x) < 7f && f > 0f) continue;      // 道の上
+
+            float trunkHeight = 2f + (float)rng.NextDouble() * 1.5f;
+            float crown = 2.4f + (float)rng.NextDouble() * 1.4f;
+            float shade = (float)rng.NextDouble() * 0.12f;
+
+            AddBlock("TreeTrunk", PrimitiveType.Cylinder, Point(x, ground + trunkHeight * 0.5f, f),
+                new Vector3(0.5f, trunkHeight * 0.5f, 0.5f), WoodColor, false, false);
+            AddBlock("TreeCrown", PrimitiveType.Sphere, Point(x, ground + trunkHeight + crown * 0.35f, f),
+                Vector3.one * crown, new Color(0.15f + shade, 0.4f + shade, 0.15f), false, false);
+            placed++;
+        }
     }
 
     GameObject AddBlock(string blockName, PrimitiveType type, Vector3 position, Vector3 scale, Color color, bool flashesOnDamage, bool hasCollider = true)

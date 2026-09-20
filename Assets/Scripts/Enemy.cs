@@ -7,6 +7,15 @@ public enum EnemyKind
     Flying,
 }
 
+/// <summary>地上の敵の種類。</summary>
+public enum EnemyVariant
+{
+    Normal,
+    Armored,   // 頑丈(鎧のゴブリン)
+    Giant,     // 巨大(オーガ)
+    Runner,    // 俊敏(小さくて速い)
+}
+
 /// <summary>敵の基本の性能。WaveSpawner の Inspector で調整できる。</summary>
 [System.Serializable]
 public class EnemyStats
@@ -21,11 +30,18 @@ public class EnemyStats
     public float attackInterval = 1.6f;
     [Tooltip("倒したときの得点。")]
     public int score = 10;
+    [Tooltip("大きさの倍率(1 = 標準)。")]
+    public float sizeMultiplier = 1f;
+    [Tooltip("倒したときに、通常の抽選とは別に、必ず落とすアイテムの数。")]
+    public int bonusDrops = 0;
 
     public EnemyStats() { }
 
-    public EnemyStats(float health, float speed, float attackDamage, float attackInterval, int score)
+    public EnemyStats(float health, float speed, float attackDamage, float attackInterval, int score,
+                      float sizeMultiplier = 1f, int bonusDrops = 0)
     {
+        this.sizeMultiplier = sizeMultiplier;
+        this.bonusDrops = bonusDrops;
         this.health = health;
         this.speed = speed;
         this.attackDamage = attackDamage;
@@ -58,6 +74,9 @@ public class Enemy : MonoBehaviour
     Transform legLeft;
     Transform wingRight;
     Transform wingLeft;
+    Transform hpBar;
+    Transform hpFill;
+    Renderer hpFillRenderer;
 
     float clock;
     float walkPhase;
@@ -71,9 +90,11 @@ public class Enemy : MonoBehaviour
     /// standPoint = 到着したときに止まる位置、lookPoint = 到着後に攻撃する(向く)位置。
     /// </summary>
     public static Enemy Spawn(EnemyKind kind, Vector3 spawnPosition, Vector3 standPoint, Vector3 lookPoint,
-                              float scale, float speedMultiplier, float healthMultiplier, EnemyStats stats)
+                              float scale, float speedMultiplier, float healthMultiplier, EnemyStats stats,
+                              EnemyVariant variant = EnemyVariant.Normal)
     {
-        var root = new GameObject(kind == EnemyKind.Ground ? "Goblin" : "Bat");
+        string rootName = kind == EnemyKind.Flying ? "Bat" : variant + "Goblin";
+        var root = new GameObject(rootName);
         root.transform.position = spawnPosition;
         root.transform.localScale = Vector3.one * scale;
 
@@ -96,7 +117,8 @@ public class Enemy : MonoBehaviour
 
         if (kind == EnemyKind.Ground)
         {
-            enemy.BuildGoblin();
+            enemy.BuildGoblin(variant);
+            if (variant == EnemyVariant.Armored || variant == EnemyVariant.Giant) enemy.BuildHpBar(2.05f);
             var capsule = root.AddComponent<CapsuleCollider>();
             capsule.center = new Vector3(0f, 0.8f, 0f);
             capsule.radius = 0.45f;
@@ -113,7 +135,7 @@ public class Enemy : MonoBehaviour
         // 見た目を作り終えてから、体力などを Target に渡す
         enemy.target = root.AddComponent<Target>();
         float dropHeight = kind == EnemyKind.Ground ? 1f * scale : 0f;
-        enemy.target.Configure(stats.health * healthMultiplier, stats.score, dropHeight);
+        enemy.target.Configure(stats.health * healthMultiplier, stats.score, dropHeight, stats.bonusDrops);
         return enemy;
     }
 
@@ -142,7 +164,7 @@ public class Enemy : MonoBehaviour
         return go.transform;
     }
 
-    void BuildGoblin()
+    void BuildGoblin(EnemyVariant variant)
     {
         Color skin = new Color(0.38f, 0.62f, 0.25f);
         Color darkSkin = new Color(0.28f, 0.48f, 0.2f);
@@ -150,6 +172,19 @@ public class Enemy : MonoBehaviour
         Color wood = new Color(0.4f, 0.25f, 0.12f);
         Color darkWood = new Color(0.3f, 0.18f, 0.08f);
         Color eye = new Color(1f, 0.15f, 0.1f);
+
+        if (variant == EnemyVariant.Giant)
+        {
+            skin = new Color(0.62f, 0.5f, 0.36f);
+            darkSkin = new Color(0.5f, 0.4f, 0.28f);
+            cloth = new Color(0.5f, 0.15f, 0.12f);
+        }
+        else if (variant == EnemyVariant.Runner)
+        {
+            skin = new Color(0.65f, 0.78f, 0.25f);
+            darkSkin = new Color(0.5f, 0.65f, 0.2f);
+            eye = new Color(1f, 0.95f, 0.2f);
+        }
 
         // 足(付け根で回して、歩く動きにする)
         legRight = Pivot(model, "LegRight", new Vector3(0.16f, 0.5f, 0f));
@@ -178,6 +213,60 @@ public class Enemy : MonoBehaviour
         Part(armLeft, PrimitiveType.Cylinder, "Arm", new Vector3(0f, -0.22f, 0f), new Vector3(0.14f, 0.22f, 0.14f), skin);
         Part(armRight, PrimitiveType.Cylinder, "ClubShaft", new Vector3(0f, -0.55f, 0.05f), new Vector3(0.1f, 0.28f, 0.1f), wood);
         Part(armRight, PrimitiveType.Sphere, "ClubHead", new Vector3(0f, -0.86f, 0.05f), Vector3.one * 0.26f, darkWood);
+
+        Color red = new Color(0.75f, 0.12f, 0.1f);
+        if (variant == EnemyVariant.Armored)
+        {
+            // 鎧、兜、盾
+            Color steel = new Color(0.62f, 0.65f, 0.7f);
+            Color darkSteel = new Color(0.4f, 0.42f, 0.48f);
+            Part(model, PrimitiveType.Sphere, "Helmet", new Vector3(0f, 1.5f, 0.03f), new Vector3(0.6f, 0.34f, 0.58f), steel);
+            Part(model, PrimitiveType.Cube, "HelmetCrest", new Vector3(0f, 1.7f, 0.03f), new Vector3(0.05f, 0.16f, 0.36f), red);
+            Part(model, PrimitiveType.Cube, "ChestPlate", new Vector3(0f, 0.85f, 0.2f), new Vector3(0.62f, 0.5f, 0.14f), steel);
+            Part(model, PrimitiveType.Sphere, "PauldronRight", new Vector3(0.4f, 1.12f, 0f), new Vector3(0.3f, 0.22f, 0.3f), darkSteel);
+            Part(model, PrimitiveType.Sphere, "PauldronLeft", new Vector3(-0.4f, 1.12f, 0f), new Vector3(0.3f, 0.22f, 0.3f), darkSteel);
+            Part(armLeft, PrimitiveType.Cube, "Shield", new Vector3(-0.1f, -0.35f, 0.18f), new Vector3(0.06f, 0.55f, 0.42f), darkSteel);
+            Part(armLeft, PrimitiveType.Cube, "ShieldBoss", new Vector3(-0.15f, -0.35f, 0.18f), new Vector3(0.05f, 0.14f, 0.14f), steel);
+        }
+        else if (variant == EnemyVariant.Giant)
+        {
+            // 角、牙、大きなおなか
+            Color bone = new Color(0.9f, 0.86f, 0.75f);
+            Part(model, PrimitiveType.Cube, "HornRight", new Vector3(0.22f, 1.62f, 0.05f), new Vector3(0.08f, 0.3f, 0.08f), bone, new Vector3(0f, 0f, -25f));
+            Part(model, PrimitiveType.Cube, "HornLeft", new Vector3(-0.22f, 1.62f, 0.05f), new Vector3(0.08f, 0.3f, 0.08f), bone, new Vector3(0f, 0f, 25f));
+            Part(model, PrimitiveType.Cube, "TuskRight", new Vector3(0.12f, 1.15f, 0.27f), new Vector3(0.05f, 0.15f, 0.05f), bone, new Vector3(-20f, 0f, 0f));
+            Part(model, PrimitiveType.Cube, "TuskLeft", new Vector3(-0.12f, 1.15f, 0.27f), new Vector3(0.05f, 0.15f, 0.05f), bone, new Vector3(-20f, 0f, 0f));
+            Part(model, PrimitiveType.Sphere, "Belly", new Vector3(0f, 0.75f, 0.12f), new Vector3(0.62f, 0.5f, 0.5f), skin);
+        }
+        else if (variant == EnemyVariant.Runner)
+        {
+            // 赤いバンダナ
+            Part(model, PrimitiveType.Cylinder, "Bandana", new Vector3(0f, 1.45f, 0.05f), new Vector3(0.56f, 0.03f, 0.53f), red);
+        }
+    }
+
+    /// <summary>頭の上に、体力バーを付ける(いつもカメラのほうを向く)。</summary>
+    void BuildHpBar(float y)
+    {
+        hpBar = Pivot(transform, "HpBar", new Vector3(0f, y, 0f));
+        Part(hpBar, PrimitiveType.Cube, "HpBack", Vector3.zero, new Vector3(1.04f, 0.16f, 0.02f), new Color(0.08f, 0.08f, 0.08f));
+        hpFill = Part(hpBar, PrimitiveType.Cube, "HpFill", new Vector3(0f, 0f, -0.02f), new Vector3(1f, 0.1f, 0.02f), Color.green);
+        hpFillRenderer = hpFill.GetComponent<Renderer>();
+    }
+
+    void UpdateHpBar()
+    {
+        float fraction = target != null ? target.HealthFraction : 0f;
+        float width = Mathf.Max(0.001f, fraction);
+        hpFill.localScale = new Vector3(width, 0.1f, 0.02f);
+        hpFill.localPosition = new Vector3(-(1f - width) * 0.5f, 0f, -0.02f);
+        hpFillRenderer.material.color = Color.Lerp(new Color(0.9f, 0.15f, 0.1f), new Color(0.2f, 0.9f, 0.25f), fraction);
+
+        if (PlayerView.Eye != null)
+        {
+            Vector3 fromEye = hpBar.position - PlayerView.Eye.position;
+            if (fromEye.sqrMagnitude > 0.0001f) hpBar.rotation = Quaternion.LookRotation(fromEye);
+        }
     }
 
     void BuildBat()
@@ -214,6 +303,7 @@ public class Enemy : MonoBehaviour
 
         float dt = Time.deltaTime;
         clock += dt;
+        if (hpBar != null) UpdateHpBar();
 
         Fort fort = Fort.Instance;
         bool fortAlive = fort != null && !fort.IsDestroyed;
