@@ -25,8 +25,8 @@ public class GameAudio : MonoBehaviour
     float lastFortHitTime = -10f;
     float lastHitTime = -10f;
 
-    AudioClip shotLight, shotHeavy, shotCharged, shotZap, headshotPing, emptyClick, comboBlast, enemyHit, enemyKill, enemyKillBig;
-    AudioClip ammoChime, gradeChime, fortHit, waveHorn, waveJingle, overDirge;
+    AudioClip shotLight, shotHeavy, shotCharged, shotZap, headshotPing, linkClip, unlinkClip, emptyClick, comboBlast, enemyHit, enemyKill, enemyKillBig;
+    AudioClip ammoChime, gradeChime, fortHit, waveHorn, waveJingle, overDirge, bazookaLaunch, bazookaBoom;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetState()
@@ -96,6 +96,8 @@ public class GameAudio : MonoBehaviour
         shotCharged = Synth.Make("ShotCharged", Synth.Charged());
         shotZap = Synth.Make("ShotZap", Synth.Zap(0.3f));
         headshotPing = Synth.Make("Headshot", Synth.Chime(new[] { 2093f, 2637f, 3136f, 4186f }, 0.045f, 0.5f));
+        linkClip = Synth.Make("Link", Synth.Link());
+        unlinkClip = Synth.Make("Unlink", Synth.Unlink());
         emptyClick = Synth.Make("Empty", Synth.Click());
         comboBlast = Synth.Make("Combo", Synth.Combo());
         enemyHit = Synth.Make("Hit", Synth.Shot(0.14f, 320f, 130f, 0.7f, 60f));
@@ -104,6 +106,8 @@ public class GameAudio : MonoBehaviour
         ammoChime = Synth.Make("Ammo", Synth.Chime(new[] { 1318.5f, 1760f }, 0.08f, 0.3f));
         gradeChime = Synth.Make("Grade", Synth.Chime(new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, 0.09f, 0.55f));
         fortHit = Synth.Make("FortHit", Synth.Shot(0.5f, 100f, 30f, 1.1f, 9f));
+        bazookaLaunch = Synth.Make("BazookaLaunch", Synth.Shot(0.55f, 220f, 45f, 1.1f, 12f));
+        bazookaBoom = Synth.Make("BazookaBoom", Synth.Shot(1.3f, 95f, 20f, 1.3f, 5f));
         waveHorn = Synth.Make("Horn", Synth.Horn(new[] { 146.83f, 220f, 293.66f }, new[] { 0f, 0.35f, 0.7f }, new[] { 0.35f, 0.35f, 0.9f }, 0.5f));
         waveJingle = Synth.Make("Jingle", Synth.Chime(new[] { 587.33f, 739.99f, 880f, 1174.66f }, 0.11f, 0.7f));
         overDirge = Synth.Make("Over", Synth.Horn(new[] { 293.66f, 220f, 174.61f, 146.83f }, new[] { 0f, 0.5f, 1f, 1.6f }, new[] { 0.55f, 0.55f, 0.65f, 1.4f }, 0.4f));
@@ -205,6 +209,29 @@ public class GameAudio : MonoBehaviour
         Instance.Play(Instance.fortHit, position, 0.35f + 0.5f * big01, Random.Range(1.4f, 1.7f));
     }
 
+    /// <summary>バズーカを撃った音:重い「ボン」に、光の走る音を重ねる。</summary>
+    public static void PlayBazookaLaunch(Vector3 position)
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.bazookaLaunch, position, 1f, Random.Range(0.95f, 1.05f));
+        Instance.Play(Instance.shotZap, position, 0.4f, 0.8f);
+    }
+
+    /// <summary>バズーカの爆発の音:長く低い轟音に、破裂音を重ねる。</summary>
+    public static void PlayBazookaBoom(Vector3 position)
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.bazookaBoom, position, 1f, Random.Range(0.95f, 1.05f));
+        Instance.Play(Instance.enemyKillBig, position, 0.7f, 0.8f);
+    }
+
+    /// <summary>武器を切り替えたときの音。バズーカへは低く、銃へは高く、金属が噛み合う音。</summary>
+    public static void PlaySwitch(Vector3 position, bool toBazooka)
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.linkClip, position, 0.8f, toBazooka ? 0.75f : 1.25f);
+    }
+
     public static void PlayCombo(Vector3 position)
     {
         if (Instance == null) return;
@@ -224,6 +251,20 @@ public class GameAudio : MonoBehaviour
         if (Time.time - Instance.lastHitTime < 0.04f) return;
         Instance.lastHitTime = Time.time;
         Instance.Play(Instance.enemyHit, position, 0.6f, Random.Range(0.9f, 1.15f));
+    }
+
+    /// <summary>左右の銃が揃ったときの、金属が噛み合う「カチッ」と、上がっていく澄んだ 2 音。</summary>
+    public static void PlayLink(Vector3 position)
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.linkClip, position, 0.8f, 1f);
+    }
+
+    /// <summary>揃った状態が解除されたときの、下がっていく「シュッ」。</summary>
+    public static void PlayUnlink(Vector3 position)
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.unlinkClip, position, 0.7f, 1f);
     }
 
     /// <summary>ヘッドショットの、高くて鋭い「キンッ」。倒した音に重ねる。</summary>
@@ -438,6 +479,66 @@ static class Synth
                 for (int h = 1; h <= 6; h++) v += Mathf.Sin(TwoPi * f * vib * h * t) / h;
                 d[s0 + i] += v * attack * Mathf.Max(0f, release) * amp;
             }
+        }
+        FadeTail(d);
+        return d;
+    }
+
+    // ---- 効果音の部品(銃が揃った / 解除された) ----
+
+    /// <summary>揃った音。短い金属音の「カチッ」に、鈴のような 2 音(低い音 → 高い音)を重ねる。</summary>
+    public static float[] Link()
+    {
+        float[] d = Buffer(0.5f);
+
+        // 「カチッ」
+        float prev = 0f;
+        for (int i = 0; i < Mathf.RoundToInt(0.01f * Rate) && i < d.Length; i++)
+        {
+            float t = i / (float)Rate;
+            float n = Noise();
+            d[i] += (n - prev) * Mathf.Exp(-t * 300f) * 0.8f;
+            prev = n;
+        }
+
+        // 上がっていく 2 音(鈴の倍音は、整数倍からずらすと、金属らしくなる)
+        float[] freqs = { 988f, 1480f };
+        float[] starts = { 0.015f, 0.075f };
+        float[] ratios = { 1f, 2.4f, 3.7f };
+        float[] amps = { 1f, 0.35f, 0.2f };
+        for (int n = 0; n < freqs.Length; n++)
+        {
+            int s0 = Mathf.RoundToInt(starts[n] * Rate);
+            for (int i = 0; s0 + i < d.Length; i++)
+            {
+                float t = i / (float)Rate;
+                float env = Mathf.Min(1f, t * 400f) * Mathf.Exp(-t * 9f);
+                float v = 0f;
+                for (int h = 0; h < ratios.Length; h++) v += Mathf.Sin(TwoPi * freqs[n] * ratios[h] * t) * amps[h];
+                d[s0 + i] += v * env * 0.4f;
+            }
+        }
+
+        FadeTail(d);
+        return d;
+    }
+
+    /// <summary>解除の音。音程が下がっていく短い音と、息が抜けるような雑音。</summary>
+    public static float[] Unlink()
+    {
+        float[] d = Buffer(0.3f);
+        float phase = 0f;
+        float lowpass = 0f;
+        for (int i = 0; i < d.Length; i++)
+        {
+            float t = i / (float)Rate;
+            float k = t / 0.3f;
+            float freq = Mathf.Lerp(1800f, 300f, Mathf.Sqrt(k));
+            phase += TwoPi * freq / Rate;
+            float tone = Mathf.Sin(phase) * Mathf.Exp(-t * 14f) * 0.6f;
+            lowpass += (Noise() - lowpass) * 0.5f;
+            float puff = (Noise() - lowpass) * Mathf.Exp(-t * 30f) * 0.4f;
+            d[i] = tone + puff;
         }
         FadeTail(d);
         return d;

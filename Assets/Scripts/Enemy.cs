@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>敵の種類。地上を歩いてくるものと、空を飛んでくるもの。</summary>
 public enum EnemyKind
@@ -66,6 +67,11 @@ public class Enemy : MonoBehaviour
     public static float FarMinSpeed = 6f;
     public static float BoostStartMeters = 30f;
     public static float BoostFullMeters = 70f;
+    /// <summary>敵の影を出すか(太陽の影が入っているとき)。敵は、影だけを落とす軽い立体 1 つを持つ。</summary>
+    public static bool ProxyShadows = true;
+
+    static Mesh goblinShadow;
+    static Mesh batShadow;
 
     EnemyKind kind;
     Vector3 standPoint;
@@ -146,6 +152,9 @@ public class Enemy : MonoBehaviour
             enemy.AddHeadHitbox(new Vector3(0f, 0.08f, 0.42f), 0.26f);
         }
 
+        // 敵の体の各部分は影を落とさず、代わりに、影だけを落とす軽い立体を 1 つ付ける(影が、長く伸びて見える)
+        if (ProxyShadows) enemy.AddShadowProxy(kind == EnemyKind.Ground ? GoblinShadowMesh() : BatShadowMesh());
+
         // 見た目を作り終えてから、体力などを Target に渡す
         enemy.target = root.AddComponent<Target>();
         float dropHeight = kind == EnemyKind.Ground ? 1f * scale : 0f;
@@ -163,6 +172,54 @@ public class Enemy : MonoBehaviour
         go.AddComponent<HeadHitbox>();
     }
 
+    /// <summary>影だけを落とす立体を付ける(画面には見えない)。</summary>
+    void AddShadowProxy(Mesh mesh)
+    {
+        Material shared = Paint.Template;
+        if (mesh == null || shared == null) return;
+
+        var go = new GameObject("ShadowProxy");
+        go.transform.SetParent(model, false);
+        go.AddComponent<MeshFilter>().sharedMesh = mesh;
+        var rend = go.AddComponent<MeshRenderer>();
+        rend.sharedMaterial = shared;
+        rend.shadowCastingMode = ShadowCastingMode.ShadowsOnly;
+        rend.receiveShadows = false;
+    }
+
+    static Mesh GoblinShadowMesh()
+    {
+        if (goblinShadow != null) return goblinShadow;
+
+        var b = new MeshKit.Batch();
+        Mesh sphere = MeshKit.Sphere(4, 8, false);
+        Mesh cyl = MeshKit.Cylinder(6);
+        b.Add(sphere, new Vector3(0f, 0.85f, 0f), Quaternion.identity, new Vector3(0.62f, 0.95f, 0.5f));   // 体
+        b.Add(sphere, new Vector3(0f, 1.3f, 0.05f), Quaternion.identity, new Vector3(0.55f, 0.48f, 0.52f)); // 頭
+        b.Add(cyl, new Vector3(0.16f, 0f, 0f), Quaternion.identity, new Vector3(0.2f, 0.55f, 0.2f));        // 足
+        b.Add(cyl, new Vector3(-0.16f, 0f, 0f), Quaternion.identity, new Vector3(0.2f, 0.55f, 0.2f));
+        b.Add(cyl, new Vector3(0.42f, 0.45f, 0.05f), Quaternion.identity, new Vector3(0.14f, 0.65f, 0.14f)); // 腕
+        b.Add(cyl, new Vector3(-0.42f, 0.55f, 0f), Quaternion.identity, new Vector3(0.14f, 0.55f, 0.14f));
+        b.Add(sphere, new Vector3(0.42f, 0.18f, 0.1f), Quaternion.identity, Vector3.one * 0.26f);           // 棍棒
+        goblinShadow = b.Build("GoblinShadow");
+        return goblinShadow;
+    }
+
+    static Mesh BatShadowMesh()
+    {
+        if (batShadow != null) return batShadow;
+
+        var b = new MeshKit.Batch();
+        Mesh sphere = MeshKit.Sphere(4, 8, false);
+        Mesh cube = MeshKit.Cube();
+        b.Add(sphere, Vector3.zero, Quaternion.identity, new Vector3(0.5f, 0.42f, 0.7f));                  // 体
+        b.Add(sphere, new Vector3(0f, 0.08f, 0.42f), Quaternion.identity, new Vector3(0.34f, 0.3f, 0.34f)); // 頭
+        b.Add(cube, new Vector3(0.7f, 0.08f, -0.1f), Quaternion.identity, new Vector3(1.4f, 0.03f, 0.55f)); // 翼
+        b.Add(cube, new Vector3(-0.7f, 0.08f, -0.1f), Quaternion.identity, new Vector3(1.4f, 0.03f, 0.55f));
+        batShadow = b.Build("BatShadow");
+        return batShadow;
+    }
+
     // ----------------------------------------------------------------- 見た目
 
     static Transform Part(Transform parent, PrimitiveType type, string partName, Vector3 localPosition, Vector3 localScale,
@@ -176,7 +233,9 @@ public class Enemy : MonoBehaviour
         go.transform.localPosition = localPosition;
         go.transform.localRotation = Quaternion.Euler(localEuler);
         go.transform.localScale = localScale;
-        Paint.Apply(go.GetComponent<Renderer>(), color);
+        var rend = go.GetComponent<Renderer>();
+        Paint.Apply(rend, color);
+        rend.shadowCastingMode = ShadowCastingMode.Off;
         return go.transform;
     }
 
@@ -195,7 +254,8 @@ public class Enemy : MonoBehaviour
         Color cloth = new Color(0.45f, 0.3f, 0.15f);
         Color wood = new Color(0.4f, 0.25f, 0.12f);
         Color darkWood = new Color(0.3f, 0.18f, 0.08f);
-        Color eye = new Color(1f, 0.15f, 0.1f);
+        // 目は、1 を超える明るい色にして、暗くなっても光って見えるようにする
+        Color eye = new Color(3f, 0.35f, 0.25f);
 
         if (variant == EnemyVariant.Giant)
         {
@@ -207,7 +267,7 @@ public class Enemy : MonoBehaviour
         {
             skin = new Color(0.65f, 0.78f, 0.25f);
             darkSkin = new Color(0.5f, 0.65f, 0.2f);
-            eye = new Color(1f, 0.95f, 0.2f);
+            eye = new Color(3f, 2.6f, 0.5f);
         }
 
         // 足(付け根で回して、歩く動きにする)
@@ -226,6 +286,10 @@ public class Enemy : MonoBehaviour
         Part(model, PrimitiveType.Sphere, "Nose", new Vector3(0f, 1.25f, 0.3f), new Vector3(0.1f, 0.1f, 0.12f), darkSkin);
         Part(model, PrimitiveType.Sphere, "EyeRight", new Vector3(0.12f, 1.36f, 0.25f), Vector3.one * 0.09f, eye);
         Part(model, PrimitiveType.Sphere, "EyeLeft", new Vector3(-0.12f, 1.36f, 0.25f), Vector3.one * 0.09f, eye);
+        // 怒った眉と、きば
+        Part(model, PrimitiveType.Cube, "Brow", new Vector3(0f, 1.44f, 0.26f), new Vector3(0.42f, 0.05f, 0.1f), darkSkin, new Vector3(-12f, 0f, 0f));
+        Part(model, PrimitiveType.Cube, "FangRight", new Vector3(0.07f, 1.13f, 0.26f), new Vector3(0.035f, 0.08f, 0.03f), new Color(0.95f, 0.92f, 0.8f));
+        Part(model, PrimitiveType.Cube, "FangLeft", new Vector3(-0.07f, 1.13f, 0.26f), new Vector3(0.035f, 0.08f, 0.03f), new Color(0.95f, 0.92f, 0.8f));
         // とがった耳
         Part(model, PrimitiveType.Cube, "EarRight", new Vector3(0.36f, 1.4f, 0f), new Vector3(0.34f, 0.09f, 0.05f), skin, new Vector3(0f, 0f, 20f));
         Part(model, PrimitiveType.Cube, "EarLeft", new Vector3(-0.36f, 1.4f, 0f), new Vector3(0.34f, 0.09f, 0.05f), skin, new Vector3(0f, 0f, -20f));
@@ -297,7 +361,7 @@ public class Enemy : MonoBehaviour
     {
         Color fur = new Color(0.25f, 0.15f, 0.3f);
         Color wing = new Color(0.4f, 0.2f, 0.45f);
-        Color eye = new Color(1f, 0.15f, 0.1f);
+        Color eye = new Color(3f, 0.35f, 0.25f);
 
         Part(model, PrimitiveType.Sphere, "Body", Vector3.zero, new Vector3(0.5f, 0.42f, 0.7f), fur);
         Part(model, PrimitiveType.Sphere, "Head", new Vector3(0f, 0.08f, 0.42f), new Vector3(0.34f, 0.3f, 0.34f), fur);

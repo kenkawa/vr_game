@@ -108,7 +108,7 @@ public class KillEffects : MonoBehaviour
         Color gold = headshot ? new Color(1f, 0.3f, 0.15f) : new Color(1f, 0.85f, 0.2f);
 
         TextMesh tm = HudText.Create("KillScore", null, 64, characterSize, gold);
-        tm.text = headshot ? "HEADSHOT!\n+" + score : "+" + score;
+        HudText.SetText(tm, headshot ? "HEADSHOT!\n+" + score : "+" + score);
         tm.transform.position = center + Vector3.up * 0.6f;
 
         var fx = tm.gameObject.AddComponent<KillEffects>();

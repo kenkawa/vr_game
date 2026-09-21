@@ -28,6 +28,28 @@ public class WaveSpawner : MonoBehaviour
     [Range(0f, 1f)]
     [SerializeField] float sfxVolume = 1f;
 
+    [Header("見た目(明るい真昼の、中世ファンタジー)")]
+    [Tooltip("太陽の方角(度)。正面が 0、右が +、左が -。150 は、プレイヤーの後ろの右側から照らす(敵の顔が明るく見える)。正面に近づけると、敵が逆光で暗く見える。")]
+    [SerializeField] float sunAngleFromFront = 150f;
+    [Tooltip("太陽の高さ(度)。大きいほど真昼に近く、影が短くなる。小さいほど夕方に近い。")]
+    [SerializeField] float sunHeightAngle = 55f;
+    [Tooltip("太陽の影を出すか(柵と敵の影)。Quest 2 で重いときは、まずこれを切る。")]
+    [SerializeField] bool castSunShadows = true;
+    [Tooltip("たいまつの暖かい光(点光源)を出すか。真昼は目立たないので、既定は切ってある。炎の見た目は残る。")]
+    [SerializeField] bool torchGlowLights = false;
+    [Tooltip("霧の濃さ。0 で霧なし。大きいほど、遠くが白っぽく青くかすむ。")]
+    [SerializeField] float hazeDensity = 0.0025f;
+    [Tooltip("空の星の数。0 なら、月も星も出ない(昼)。1 以上で、夜の空になる。")]
+    [SerializeField] int starTotal = 0;
+
+    [Header("文字の表示(ウェーブ・スコア・砦の耐久値)")]
+    [Tooltip("表示の方角(度)。正面が 0、左が -、右が +。絶対値を大きくするほど、視界の端に寄る。")]
+    [SerializeField] float hudAngleFromFront = -28f;
+    [Tooltip("表示の高さ(床から、m)。目の高さは 1.6。大きいほど、上に寄る。")]
+    [SerializeField] float hudHeightAboveFloor = 2.45f;
+    [Tooltip("表示までの距離(m)。")]
+    [SerializeField] float hudDistance = 4.5f;
+
     [Header("ウェーブ")]
     [SerializeField] int firstWaveCount = 3;
     [SerializeField] int countIncreasePerWave = 2;
@@ -97,6 +119,9 @@ public class WaveSpawner : MonoBehaviour
 
     Fort fort;
     TextMesh hud;
+    Transform fortBarBack;
+    Transform fortBarFill;
+    Renderer fortBarFillRenderer;
     string diagnostics = "";
     int wave;
     int aliveCount;
@@ -140,8 +165,14 @@ public class WaveSpawner : MonoBehaviour
         Enemy.BoostStartMeters = boostStartMeters;
         Enemy.BoostFullMeters = Mathf.Max(boostStartMeters + 1f, boostFullMeters);
 
+        // 空・光・霧(砦より先に整える)
+        Atmosphere.Build(sunAngleFromFront, sunHeightAngle, castSunShadows, hazeDensity, starTotal);
+        Enemy.ProxyShadows = castSunShadows;
+
         var fortObject = new GameObject("Fort");
         fort = fortObject.AddComponent<Fort>();
+        fort.TorchLights = torchGlowLights;
+        fort.CastShadows = castSunShadows;
         fort.Build(fortMaxHealth, fortHeightMeters);
         fort.Damaged += OnFortDamaged;
         fort.Broken += OnFortBroken;
@@ -342,7 +373,8 @@ public class WaveSpawner : MonoBehaviour
         foreach (var enemy in FindObjectsByType<Enemy>()) Destroy(enemy.gameObject);
 
         hud.color = new Color(1f, 0.35f, 0.3f);
-        hud.text = $"GAME OVER\nWAVE {wave}   SCORE {score}\n\nHOLD BOTH TRIGGERS\nTO RETRY";
+        HudText.SetText(hud, $"GAME OVER\nWAVE {wave}   SCORE {score}\n\nHOLD BOTH TRIGGERS\nTO RETRY");
+        if (fortBarBack != null) fortBarBack.gameObject.SetActive(false);
 
         yield return new WaitForSeconds(1.5f);
 
@@ -369,8 +401,8 @@ public class WaveSpawner : MonoBehaviour
         string origin = OVRManager.instance != null ? OVRManager.instance.trackingOriginType.ToString() : "?";
         string material = Paint.Template != null ? "OK" : "NONE";
         string adjusted = HeightCalibrator.Calibrated ? $"{HeightCalibrator.LastOffset:+0.00;-0.00}m" : "NONE";
-        diagnostics = $"\nEYE {eyeHeight:0.00}m  ADJ {adjusted}  ORIGIN {origin}  MAT {material}\nHOLD BOTH GRIPS 1s TO ADJUST HEIGHT";
-        Debug.Log($"[WaveSpawner] 頭の高さ(砦の床から)={eyeHeight:0.00} m、補正量={adjusted}、トラッキング原点={origin}、材質(PrimitiveMat)={material}");
+        diagnostics = $"\nEYE {eyeHeight:0.00}m  ADJ {adjusted}  YAW {HeightCalibrator.LastYawOffset:+0;-0}deg  ORIGIN {origin}  MAT {material}\nHOLD BOTH GRIPS 1s TO RESET HEIGHT AND FACING";
+        Debug.Log($"[WaveSpawner] 頭の高さ(砦の床から)={eyeHeight:0.00} m、補正量={adjusted}、向きの補正={HeightCalibrator.LastYawOffset:+0;-0} 度、トラッキング原点={origin}、材質(PrimitiveMat)={material}");
         RefreshHud();
 
         yield return new WaitForSeconds(15f);
@@ -380,10 +412,29 @@ public class WaveSpawner : MonoBehaviour
 
     void CreateHud()
     {
-        hud = HudText.Create("WaveHud", null, 64, 0.05f, Color.white);
-        hud.transform.position = new Vector3(PlayerView.Center.x, PlayerView.FloorY + 1.8f, PlayerView.Center.z)
-                                 + PlayerView.FlatForward * 4.5f;
-        hud.transform.rotation = Quaternion.LookRotation(PlayerView.FlatForward);
+        hud = HudText.Create("WaveHud", null, 64, 0.05f, new Color(0.93f, 0.95f, 1f));
+        // 視界の端(既定は、左上)に置き、プレイヤーのほうを向ける
+        Vector3 hudDirection = Quaternion.AngleAxis(hudAngleFromFront, Vector3.up) * PlayerView.FlatForward;
+        hud.transform.position = new Vector3(PlayerView.Center.x, PlayerView.FloorY + hudHeightAboveFloor, PlayerView.Center.z)
+                                 + hudDirection * hudDistance;
+        hud.transform.rotation = Quaternion.LookRotation(hudDirection);
+
+        // 砦の耐久値を示すバー(文字の上)。金の枠の中で、緑から赤へ変わる
+        var back = Paint.Prim(PrimitiveType.Cube, "FortBarFrame", new Color(0.9f, 0.7f, 0.25f));
+        back.transform.SetParent(hud.transform, false);
+        back.transform.localPosition = new Vector3(0f, 0.85f, 0.03f);
+        back.transform.localScale = new Vector3(3.3f, 0.22f, 0.02f);
+        fortBarBack = back.transform;
+
+        var inner = Paint.Prim(PrimitiveType.Cube, "FortBarBack", new Color(0.05f, 0.05f, 0.08f));
+        inner.transform.SetParent(back.transform, false);
+        inner.transform.localPosition = new Vector3(0f, 0f, -0.6f);
+        inner.transform.localScale = new Vector3(0.96f, 0.7f, 1f);
+
+        var fill = Paint.Prim(PrimitiveType.Cube, "FortBarFill", Color.green);
+        fill.transform.SetParent(back.transform, false);
+        fortBarFill = fill.transform;
+        fortBarFillRenderer = fill.GetComponent<Renderer>();
     }
 
     void RefreshHud(string title = null)
@@ -391,8 +442,21 @@ public class WaveSpawner : MonoBehaviour
         if (hud == null || gameOver) return;
 
         if (title == null) title = $"WAVE {wave}";
-        float ratio = fort.MaxHealth > 0f ? fort.Health / fort.MaxHealth : 0f;
-        hud.color = ratio <= 0.3f ? new Color(1f, 0.4f, 0.35f) : Color.white;
-        hud.text = $"{title}   SCORE {score}\nFORT {Mathf.CeilToInt(fort.Health)}/{Mathf.CeilToInt(fort.MaxHealth)}\nENEMY SIZE {CurrentScale() * 100f:0}%{diagnostics}";
+        float ratio = fort.MaxHealth > 0f ? Mathf.Clamp01(fort.Health / fort.MaxHealth) : 0f;
+        string fortColor = ratio <= 0.3f ? "#FF6659" : "#FFFFFF";
+        HudText.SetText(hud,
+            $"<color=#FFD24A>{title}</color>   SCORE <color=#FFFFFF>{score}</color>\n" +
+            $"<color={fortColor}>FORT {Mathf.CeilToInt(fort.Health)}/{Mathf.CeilToInt(fort.MaxHealth)}</color>\n" +
+            $"ENEMY SIZE {CurrentScale() * 100f:0}%{diagnostics}");
+
+        // バー(親の枠の大きさに対する割合で、左から伸び縮みする)
+        if (fortBarFill != null)
+        {
+            const float innerWidth = 0.94f;
+            float width = Mathf.Max(0.001f, innerWidth * ratio);
+            fortBarFill.localScale = new Vector3(width, 0.58f, 1f);
+            fortBarFill.localPosition = new Vector3(-(innerWidth - width) * 0.5f, 0f, -1.2f);
+            fortBarFillRenderer.material.color = Color.Lerp(new Color(0.95f, 0.15f, 0.1f), new Color(0.2f, 0.9f, 0.3f), ratio);
+        }
     }
 }

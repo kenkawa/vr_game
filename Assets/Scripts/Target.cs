@@ -52,7 +52,14 @@ public class Target : MonoBehaviour
 
     void CacheRenderers()
     {
-        renderers = GetComponentsInChildren<Renderer>();
+        // 影だけを落とす見えない立体(ShadowProxy)は、色を変える対象に入れない
+        var all = GetComponentsInChildren<Renderer>();
+        var list = new System.Collections.Generic.List<Renderer>(all.Length);
+        foreach (var r in all)
+        {
+            if (r.shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly) list.Add(r);
+        }
+        renderers = list.ToArray();
         baseColors = new Color[renderers.Length];
         for (int i = 0; i < renderers.Length; i++) baseColors[i] = renderers[i].material.color;
     }
