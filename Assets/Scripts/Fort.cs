@@ -15,7 +15,7 @@ using UnityEngine.Rendering;
 /// ゆらめくたいまつ、門、木の柵、赤い絨毯、樽と木箱。同じ色の飾りは 1 つの立体にまとめて、描画の回数を減らしている。
 /// 周りの景色(山・森・岩・草など)は Scenery が作る。
 /// </summary>
-public class Fort : MonoBehaviour
+public class Fort : MonoBehaviour, IStronghold
 {
     public static Fort Instance { get; private set; }
 
@@ -49,6 +49,7 @@ public class Fort : MonoBehaviour
     readonly List<Renderer> stone = new List<Renderer>();
     readonly List<Color> stoneColors = new List<Color>();
 
+    public string Label => "FORT";
     public float Health { get; private set; }
     public float MaxHealth => maxHealth;
     public bool IsDestroyed => Health <= 0f;
@@ -70,6 +71,7 @@ public class Fort : MonoBehaviour
     void OnDestroy()
     {
         if (Instance == this) Instance = null;
+        if (Stronghold.Current == (IStronghold)this) Stronghold.Current = null;
     }
 
     /// <summary>
@@ -88,6 +90,7 @@ public class Fort : MonoBehaviour
     public void Build(float maxHealthValue, float heightMeters)
     {
         Instance = this;
+        Stronghold.Current = this;
         maxHealth = maxHealthValue;
         height = heightMeters;
         Health = maxHealth;
@@ -126,7 +129,7 @@ public class Fort : MonoBehaviour
 
         // 地面(草の模様)と、正面へ伸びる土の道(荷車のあとつき)
         AddBlock("Ground", PrimitiveType.Cube, Point(0f, ground - 0.5f, 0f), new Vector3(900f, 1f, 900f),
-            GroundTint, false, false, ProcTex.Grass(), 150f, 150f);
+            GroundTint, false, true, ProcTex.Grass(), 150f, 150f);   // 当たり判定あり:銃やバズーカが地面に当たる(バズーカは地面で爆発する)
         AddBlock("Road", PrimitiveType.Cube, Point(0f, ground + 0.02f, FaceForward + 110f), new Vector3(7f, 0.04f, 220f),
             RoadTint, false, false, ProcTex.Dirt(), 1f, 17f);
 

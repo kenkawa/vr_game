@@ -1,12 +1,15 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
 /// ゲーム全体の流れを管理する。空の GameObject に付けるだけで動く(砦・敵・表示は起動時に自動で作る)。
-///   ・プレイヤーは砦の上に立ち、正面から押し寄せる敵(地上のゴブリン、空のコウモリ)を撃つ
-///   ・敵が砦に到達すると攻撃され、砦の耐久値が減る。0 になるとゲームオーバー
-///   ・ウェーブが進むほど、敵が増え、小さく(=当てにくく)、速く、頑丈になる
+///   ・ステージ 1:プレイヤーは砦の上に立ち、正面から押し寄せる敵(地上のゴブリン、空のコウモリ)を撃つ
+///   ・ステージ 2:プレイヤーは高い塔の頂上に立ち、全方向(360 度)から囲んでくる敵を撃つ
+///   ・各ステージは、決まった数のウェーブをすべて全滅させるとクリア。クリアすると、次のステージへ進む(残弾とグレードは持ち越し)
+///   ・敵が建物(砦・塔)に到達すると攻撃され、耐久値が減る。0 になるとゲームオーバー
+///   ・ウェーブが進むほど、敵が増え、小さく(=当てにくく)、速く、頑丈になる(ステージをまたいで、ウェーブの通し番号で強くなる)
 /// 難易度の調整は、この Inspector で行う。
 /// </summary>
 [DisallowMultipleComponent]
@@ -18,6 +21,35 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] float fortHeightMeters = 6f;
     [Tooltip("ウェーブをクリアするたびに、砦の耐久値が回復する量。")]
     [SerializeField] float repairPerWave = 10f;
+
+    [Header("ステージ(すべてのウェーブを全滅させると、次のステージへ進む)")]
+    [Tooltip("各ステージの、ウェーブの数。この数のウェーブをすべて全滅させると、そのステージをクリア。")]
+    [SerializeField] int wavesToClear = 5;
+    [Tooltip("オフにすると、ステージ 2(塔)を作らず、砦のステージをクリアしたらゲームクリアになる。")]
+    [SerializeField] bool includeTowerStage = true;
+    [Tooltip("ステージをクリアしてから、次のステージへ進むまでの秒数。")]
+    [SerializeField] float stageClearSeconds = 4f;
+    [Tooltip("確認用。2 にすると、ステージ 2(塔)から始める(ステージ 1 を遊ばなくても、塔を試せる)。ふだんは 1。")]
+    [SerializeField] int startAtStage = 1;
+
+    [Header("塔(ステージ 2。全方向から敵が来る)")]
+    [Tooltip("塔の耐久値。0 でゲームオーバー。")]
+    [SerializeField] float towerMaxHealth = 120f;
+    [Tooltip("塔の高さ(m)。プレイヤーは、この高さの頂上に立つ。")]
+    [SerializeField] float towerHeightMeters = 12f;
+    [Tooltip("外柵(塔をぐるりと囲む木の柵)の半径(m)。地上の敵は、この外側で止まって、柵と塔を攻撃する。"
+             + "頂上の真ん中からは、塔から約 13m 以内の地面は、足場に隠れて見えないので、それより外に置いてある。")]
+    [SerializeField] float towerFenceRadius = 15.5f;
+    [Tooltip("空の敵が、頂上のまわりを飛ぶ半径(m)の範囲(塔の中心軸から)。")]
+    [SerializeField] float towerFlyMinRadius = 3.2f;
+    [SerializeField] float towerFlyMaxRadius = 5f;
+    [Tooltip("視界の外にいる敵の方向を、視界の端の矢印で知らせる。")]
+    [SerializeField] bool showEnemyMarkers = true;
+    [Tooltip("塔のステージの最初のウェーブで、敵が来る範囲(正面から、左右へ何度までか)。いきなり囲まないように、最初は正面寄りにして、ウェーブごとに広げる。")]
+    [Range(0f, 180f)]
+    [SerializeField] float towerOpeningHalfAngle = 45f;
+    [Tooltip("塔のステージの中で、この番号のウェーブになると、全方向(360 度)から来る。それまでは、ウェーブごとに、来る範囲が少しずつ広がる。1 にすると、最初から全方向。")]
+    [SerializeField] int towerSurroundWave = 5;
 
     [Header("音")]
     [Tooltip("BGM を流すか。")]
@@ -118,6 +150,10 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] EnemyStats runnerStats = new EnemyStats(1.5f, 5.5f, 2f, 1f, 20, 0.7f, 0);
 
     Fort fort;
+    Tower tower;
+    IStronghold stronghold;
+    int stage = 1;
+    int stageWave;
     TextMesh hud;
     Transform fortBarBack;
     Transform fortBarFill;
@@ -133,11 +169,7 @@ public class WaveSpawner : MonoBehaviour
 
     void OnDestroy()
     {
-        if (fort != null)
-        {
-            fort.Damaged -= OnFortDamaged;
-            fort.Broken -= OnFortBroken;
-        }
+        Unsubscribe();
     }
 
     void Start()
@@ -169,13 +201,9 @@ public class WaveSpawner : MonoBehaviour
         Atmosphere.Build(sunAngleFromFront, sunHeightAngle, castSunShadows, hazeDensity, starTotal);
         Enemy.ProxyShadows = castSunShadows;
 
-        var fortObject = new GameObject("Fort");
-        fort = fortObject.AddComponent<Fort>();
-        fort.TorchLights = torchGlowLights;
-        fort.CastShadows = castSunShadows;
-        fort.Build(fortMaxHealth, fortHeightMeters);
-        fort.Damaged += OnFortDamaged;
-        fort.Broken += OnFortBroken;
+        // 最初の舞台(確認用に startAtStage を 2 にすると、塔から始まる)
+        if (startAtStage >= 2 && includeTowerStage) BuildTower();
+        else BuildFort();
 
         // 音(効果音と BGM)
         GameAudio.Ensure(sfxVolume, bgmVolume);
@@ -189,18 +217,105 @@ public class WaveSpawner : MonoBehaviour
 
         CreateHud();
         if (!PlayerView.IsEditorSimulation) StartCoroutine(ShowDiagnostics());
-        StartCoroutine(RunWaves());
+        StartCoroutine(RunGame());
     }
 
-    // ----------------------------------------------------------------- ウェーブの進行
+#if UNITY_EDITOR
+    /// <summary>Editor でヘッドセットなしに確認するとき、左右の矢印キーで、視点を水平に回せる(360 度のステージを、見回して確認するため)。</summary>
+    void Update()
+    {
+        if (!PlayerView.IsEditorSimulation || PlayerView.Eye == null) return;
 
-    IEnumerator RunWaves()
+        var keyboard = UnityEngine.InputSystem.Keyboard.current;
+        if (keyboard == null) return;
+
+        float turn = 0f;
+        if (keyboard.leftArrowKey.isPressed) turn -= 1f;
+        if (keyboard.rightArrowKey.isPressed) turn += 1f;
+        if (turn != 0f) PlayerView.Eye.Rotate(0f, turn * 90f * Time.unscaledDeltaTime, 0f, Space.World);
+    }
+#endif
+
+    // ----------------------------------------------------------------- 舞台(砦・塔)
+
+    void BuildFort()
+    {
+        var fortObject = new GameObject("Fort");
+        fort = fortObject.AddComponent<Fort>();
+        fort.TorchLights = torchGlowLights;
+        fort.CastShadows = castSunShadows;
+        fort.Build(fortMaxHealth, fortHeightMeters);
+
+        stage = 1;
+        stronghold = fort;
+        Subscribe();
+    }
+
+    void BuildTower()
+    {
+        var towerObject = new GameObject("Tower");
+        tower = towerObject.AddComponent<Tower>();
+        tower.Build(towerMaxHealth, towerHeightMeters, towerFenceRadius);
+
+        stage = 2;
+        stronghold = tower;
+        Subscribe();
+
+        // 全方向から敵が来るので、視界の外の敵を、矢印で知らせる
+        if (showEnemyMarkers)
+        {
+            EnemyRadar.Create();
+            EnemyRadar.SetVisible(true);
+        }
+    }
+
+    void Subscribe()
+    {
+        if (stronghold == null) return;
+        stronghold.Damaged += OnFortDamaged;
+        stronghold.Broken += OnFortBroken;
+    }
+
+    void Unsubscribe()
+    {
+        if (stronghold == null) return;
+        stronghold.Damaged -= OnFortDamaged;
+        stronghold.Broken -= OnFortBroken;
+    }
+
+    /// <summary>塔のステージの間は true。地上の敵は、塔をぐるりと囲む柵に向かって、全方向から来る。</summary>
+    bool InTower => stage == 2 && tower != null;
+
+    // ----------------------------------------------------------------- ウェーブとステージの進行
+
+    IEnumerator RunGame()
     {
         RefreshHud("GET READY");
         yield return new WaitForSeconds(startDelay);
 
         while (!gameOver)
         {
+            yield return RunStage();
+            if (gameOver) yield break;
+
+            bool lastStage = stage >= (includeTowerStage ? 2 : 1);
+            if (lastStage)
+            {
+                yield return GameClear();
+                yield break;
+            }
+
+            yield return GoToTower();
+        }
+    }
+
+    /// <summary>今のステージの、すべてのウェーブを進める。全部全滅させたら戻る(ゲームオーバーでも戻る)。</summary>
+    IEnumerator RunStage()
+    {
+        stageWave = 0;
+        while (stageWave < wavesToClear && !gameOver)
+        {
+            stageWave++;
             wave++;
             int count = firstWaveCount + (wave - 1) * countIncreasePerWave;
             int flyers = wave >= flyingStartWave ? Mathf.RoundToInt(count * flyingShare) : 0;
@@ -208,7 +323,7 @@ public class WaveSpawner : MonoBehaviour
             if (GunSystem.Instance != null) GunSystem.Instance.OnWaveStart();
             GameAudio.PlayWaveStart();
             aliveCount = count;
-            Debug.Log($"[WaveSpawner] WAVE {wave}: 敵 {count} 体(空 {flyers} 体)、大きさ {CurrentScale() * 100f:0}%、速さ x{CurrentSpeedMultiplier():0.00}");
+            Debug.Log($"[WaveSpawner] STAGE {stage} WAVE {stageWave}/{wavesToClear}(通し番号 {wave}): 敵 {count} 体(空 {flyers} 体)、大きさ {CurrentScale() * 100f:0}%、速さ x{CurrentSpeedMultiplier():0.00}");
             RefreshHud();
 
             yield return SpawnWave(count, flyers);
@@ -217,11 +332,82 @@ public class WaveSpawner : MonoBehaviour
             while (aliveCount > 0 && !gameOver) yield return null;
             if (gameOver) yield break;
 
-            fort.Repair(repairPerWave);
-            GameAudio.PlayWaveClear();
-            RefreshHud($"WAVE {wave} CLEAR!");
-            yield return new WaitForSeconds(timeBetweenWaves);
+            stronghold.Repair(repairPerWave);
+
+            // 最後のウェーブのあとは、ステージクリアの演出(RunGame 側)に任せる
+            if (stageWave < wavesToClear)
+            {
+                GameAudio.PlayWaveClear();
+                string next = null;
+                if (InTower)
+                {
+                    stageWave++;   // 次のウェーブの範囲を計算するため、一時的に進める
+                    float nextArc = TowerArcHalfAngle();
+                    stageWave--;
+                    next = nextArc >= 179.5f ? "NEXT: ENEMIES FROM ALL SIDES!" : "NEXT: ENEMIES SPREAD WIDER";
+                }
+                RefreshHud($"WAVE {stageWave} CLEAR!", next);
+                yield return new WaitForSeconds(timeBetweenWaves);
+            }
         }
+    }
+
+    /// <summary>ステージ 1 をクリアしたあと、砦を片付けて、塔のステージ(ステージ 2)を始める。</summary>
+    IEnumerator GoToTower()
+    {
+        Debug.Log($"[WaveSpawner] STAGE {stage} CLEAR! SCORE {score}。塔のステージへ進みます");
+        GameAudio.PlayStageClear();
+        RefreshHud($"STAGE {stage} CLEAR!", "NEXT: THE TOWER\nENEMIES ATTACK FROM ALL SIDES");
+        yield return new WaitForSeconds(stageClearSeconds);
+        if (gameOver) yield break;
+
+        // 視界を黒くして、そのあいだに、砦を片付けて、塔を作る(作るあいだの、一瞬のもたつきを見せない)
+        ScreenFade.Show();
+        yield return new WaitForSeconds(0.4f);
+
+        Unsubscribe();
+        stronghold = null;
+        if (fort != null) Destroy(fort.gameObject);
+        fort = null;
+        yield return null;
+
+        BuildTower();
+        stageWave = 0;
+        RefreshHud("STAGE 2");
+        yield return new WaitForSeconds(0.6f);
+
+        ScreenFade.Hide();
+        GameAudio.PlayWaveStart();
+        RefreshHud("STAGE 2  GET READY", "THE TOWER");
+        yield return new WaitForSeconds(startDelay);
+    }
+
+    IEnumerator GameClear()
+    {
+        Debug.Log($"[WaveSpawner] GAME CLEAR! STAGE {stage}、SCORE {score}");
+        GameAudio.PlayStageClear();
+        EnemyRadar.SetVisible(false);
+
+        hud.color = new Color(1f, 0.85f, 0.3f);
+        HudText.SetText(hud, $"GAME CLEAR!\nSCORE {score}\n\nHOLD BOTH TRIGGERS\nTO PLAY AGAIN");
+        if (fortBarBack != null) fortBarBack.gameObject.SetActive(false);
+
+        yield return new WaitForSeconds(1.5f);
+        yield return WaitForRetry();
+    }
+
+    /// <summary>両方のトリガーを 1 秒引き続けたら、最初(ステージ 1)からやり直す。</summary>
+    IEnumerator WaitForRetry()
+    {
+        float held = 0f;
+        while (held < 1f)
+        {
+            bool both = GunSystem.Instance != null && GunSystem.Instance.BothTriggersHeld;
+            held = both ? held + Time.deltaTime : 0f;
+            yield return null;
+        }
+
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
     IEnumerator SpawnWave(int count, int flyers)
@@ -257,15 +443,23 @@ public class WaveSpawner : MonoBehaviour
             else if (roll < armored + runner) variants[i] = EnemyVariant.Runner;
         }
 
-        // 地上の敵が壁の前に並ぶ位置(横に 8 か所。あふれたら 2 列目)
-        const int slotCount = 8;
-        int[] slotOrder = new int[slotCount];
-        for (int i = 0; i < slotCount; i++) slotOrder[i] = i;
-        for (int i = slotCount - 1; i > 0; i--)
+        // 地上の敵が並ぶ位置。砦:壁の前に横に 8 か所。塔:全方向の 24 本の道(15 度おき)。あふれたら 2 列目
+        // 塔では、今のウェーブで敵が来る範囲(正面寄りから、ウェーブごとに広がる)の中の道だけを使う
+        int slotCount = InTower ? Scenery.RingLanes : 8;
+        float arc = InTower ? TowerArcHalfAngle() : 180f;
+        var usable = new List<int>();
+        for (int i = 0; i < slotCount; i++)
+        {
+            if (InTower && Mathf.Abs(Mathf.DeltaAngle(0f, i * 360f / slotCount)) > arc + 0.01f) continue;
+            usable.Add(i);
+        }
+        int[] slotOrder = usable.ToArray();
+        for (int i = slotOrder.Length - 1; i > 0; i--)
         {
             int j = Random.Range(0, i + 1);
             (slotOrder[i], slotOrder[j]) = (slotOrder[j], slotOrder[i]);
         }
+        if (InTower) Debug.Log($"[WaveSpawner] 塔 WAVE {stageWave}: 敵が来る範囲 = 正面から左右 {arc:0} 度(使う道 {slotOrder.Length}/{slotCount} 本)");
 
         float interval = spawnDuration / Mathf.Max(1, count);
         int groundIndex = 0;
@@ -276,14 +470,16 @@ public class WaveSpawner : MonoBehaviour
 
             if (kinds[i] == EnemyKind.Ground)
             {
-                int slot = slotOrder[groundIndex % slotCount];
-                int row = groundIndex / slotCount;
-                SpawnGround(slot, slotCount, row, variants[i]);
+                int slot = slotOrder[groundIndex % slotOrder.Length];
+                int row = groundIndex / slotOrder.Length;
+                if (InTower) SpawnGroundTower(slot, slotCount, row, variants[i]);
+                else SpawnGround(slot, slotCount, row, variants[i]);
                 groundIndex++;
             }
             else
             {
-                SpawnFlying();
+                if (InTower) SpawnFlyingTower(arc);
+                else SpawnFlying();
             }
 
             yield return new WaitForSeconds(interval * Random.Range(0.6f, 1.4f));
@@ -330,7 +526,63 @@ public class WaveSpawner : MonoBehaviour
         Enemy.Spawn(EnemyKind.Flying, spawn, stand, look, CurrentScale(), CurrentSpeedMultiplier(), CurrentHealthMultiplier(), flyingStats);
     }
 
+    /// <summary>塔のステージの地上の敵。slot 番目の道(全方向)を通って、外柵の外側まで歩いてくる。</summary>
+    void SpawnGroundTower(int slot, int slotCount, int row, EnemyVariant variant)
+    {
+        EnemyStats stats = groundStats;
+        if (variant == EnemyVariant.Armored) stats = armoredStats;
+        else if (variant == EnemyVariant.Giant) stats = giantStats;
+        else if (variant == EnemyVariant.Runner) stats = runnerStats;
+
+        // 道の向き(正面 0 度、右が +)。少しだけばらつかせる
+        float angle = slot * (360f / slotCount) + Random.Range(-2f, 2f);
+        Vector3 direction = Tower.Direction(angle);
+        Vector3 axis = Tower.Axis(tower.GroundY);
+
+        float stopRadius = tower.FenceRadius + groundStopFromFence * Mathf.Max(1f, stats.sizeMultiplier) + row * 1.2f;
+        Vector3 stand = axis + direction * stopRadius;
+        Vector3 look = axis + direction * tower.FenceRadius + Vector3.up * 1f;
+        Vector3 spawn = axis + direction * Random.Range(groundSpawnNearMeters, groundSpawnFarMeters);
+
+        float size = CurrentScale() * stats.sizeMultiplier;
+        Enemy.Spawn(EnemyKind.Ground, spawn, stand, look, size, CurrentSpeedMultiplier(), CurrentHealthMultiplier(), stats, variant);
+    }
+
+    /// <summary>塔のステージの空の敵。頂上のまわりの、今のウェーブの範囲(arcHalf は、正面から左右へ、度)のどこかへ飛んできて、羽ばたきながら襲う。</summary>
+    void SpawnFlyingTower(float arcHalf)
+    {
+        float angle = Random.Range(-arcHalf, arcHalf);
+        Vector3 direction = Tower.Direction(angle);
+
+        float hoverRadius = Random.Range(towerFlyMinRadius, towerFlyMaxRadius);
+        float hoverHeight = tower.TopY + Random.Range(0.3f, 3f);
+        Vector3 stand = Tower.Axis(hoverHeight) + direction * hoverRadius;
+        Vector3 look = Tower.Axis(tower.TopY - 0.3f) + direction * 0.6f;
+
+        float distance = Random.Range(flyingSpawnNearMeters, flyingSpawnFarMeters);
+        Vector3 spawn = Tower.Axis(tower.TopY + Random.Range(4f, 14f)) + direction * distance;
+
+        Enemy.Spawn(EnemyKind.Flying, spawn, stand, look, CurrentScale(), CurrentSpeedMultiplier(), CurrentHealthMultiplier(), flyingStats);
+    }
+
     // ----------------------------------------------------------------- 難易度
+
+    /// <summary>
+    /// 塔のステージで、今のウェーブの敵が来る範囲(正面から左右へ、度)。最初は towerOpeningHalfAngle で、
+    /// ウェーブごとに均等に広がり、towerSurroundWave 番目のウェーブで 180(=全方向)になる。
+    /// </summary>
+    float TowerArcHalfAngle()
+    {
+        if (towerSurroundWave <= 1) return 180f;
+        float t = Mathf.Clamp01((stageWave - 1) / (float)(towerSurroundWave - 1));
+        return Mathf.Lerp(Mathf.Clamp(towerOpeningHalfAngle, 0f, 180f), 180f, t);
+    }
+
+    /// <summary>敵が来る範囲の表示用の文字("ARC 90deg" や "ALL SIDES")。</summary>
+    static string ArcLabel(float halfAngle)
+    {
+        return halfAngle >= 179.5f ? "ALL SIDES" : $"ARC {Mathf.RoundToInt(halfAngle * 2f)}deg";
+    }
 
     /// <summary>今のウェーブでの敵の大きさ。ウェーブが進むほど小さくなる。</summary>
     float CurrentScale()
@@ -366,28 +618,19 @@ public class WaveSpawner : MonoBehaviour
 
     IEnumerator GameOver()
     {
-        Debug.Log($"[WaveSpawner] GAME OVER: WAVE {wave}, SCORE {score}");
+        Debug.Log($"[WaveSpawner] GAME OVER: STAGE {stage} WAVE {stageWave}(通し番号 {wave})、SCORE {score}");
         GameAudio.StopBgm();
         GameAudio.PlayGameOver();
 
         foreach (var enemy in FindObjectsByType<Enemy>()) Destroy(enemy.gameObject);
+        EnemyRadar.SetVisible(false);
 
         hud.color = new Color(1f, 0.35f, 0.3f);
-        HudText.SetText(hud, $"GAME OVER\nWAVE {wave}   SCORE {score}\n\nHOLD BOTH TRIGGERS\nTO RETRY");
+        HudText.SetText(hud, $"GAME OVER\nSTAGE {stage}  WAVE {stageWave}   SCORE {score}\n\nHOLD BOTH TRIGGERS\nTO RETRY");
         if (fortBarBack != null) fortBarBack.gameObject.SetActive(false);
 
         yield return new WaitForSeconds(1.5f);
-
-        // 両方のトリガーを 1 秒引き続けたら、最初からやり直す
-        float held = 0f;
-        while (held < 1f)
-        {
-            bool both = GunSystem.Instance != null && GunSystem.Instance.BothTriggersHeld;
-            held = both ? held + Time.deltaTime : 0f;
-            yield return null;
-        }
-
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        yield return WaitForRetry();
     }
 
     // ----------------------------------------------------------------- 表示
@@ -437,17 +680,20 @@ public class WaveSpawner : MonoBehaviour
         fortBarFillRenderer = fill.GetComponent<Renderer>();
     }
 
-    void RefreshHud(string title = null)
+    void RefreshHud(string title = null, string extra = null)
     {
-        if (hud == null || gameOver) return;
+        if (hud == null || gameOver || stronghold == null) return;
 
-        if (title == null) title = $"WAVE {wave}";
-        float ratio = fort.MaxHealth > 0f ? Mathf.Clamp01(fort.Health / fort.MaxHealth) : 0f;
+        if (title == null) title = $"STAGE {stage}  WAVE {stageWave}/{wavesToClear}";
+        float ratio = stronghold.MaxHealth > 0f ? Mathf.Clamp01(stronghold.Health / stronghold.MaxHealth) : 0f;
         string fortColor = ratio <= 0.3f ? "#FF6659" : "#FFFFFF";
+        string sizeText = $"ENEMY SIZE {CurrentScale() * 100f:0}%";
+        if (InTower && stageWave >= 1) sizeText += $"   <color=#FFB05A>{ArcLabel(TowerArcHalfAngle())}</color>";
+        string third = extra != null ? $"<color=#9FE8FF>{extra}</color>" : sizeText;
         HudText.SetText(hud,
             $"<color=#FFD24A>{title}</color>   SCORE <color=#FFFFFF>{score}</color>\n" +
-            $"<color={fortColor}>FORT {Mathf.CeilToInt(fort.Health)}/{Mathf.CeilToInt(fort.MaxHealth)}</color>\n" +
-            $"ENEMY SIZE {CurrentScale() * 100f:0}%{diagnostics}");
+            $"<color={fortColor}>{stronghold.Label} {Mathf.CeilToInt(stronghold.Health)}/{Mathf.CeilToInt(stronghold.MaxHealth)}</color>\n" +
+            $"{third}{diagnostics}");
 
         // バー(親の枠の大きさに対する割合で、左から伸び縮みする)
         if (fortBarFill != null)

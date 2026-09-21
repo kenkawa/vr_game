@@ -26,7 +26,7 @@ public class GameAudio : MonoBehaviour
     float lastHitTime = -10f;
 
     AudioClip shotLight, shotHeavy, shotCharged, shotZap, headshotPing, linkClip, unlinkClip, emptyClick, comboBlast, enemyHit, enemyKill, enemyKillBig;
-    AudioClip ammoChime, gradeChime, fortHit, waveHorn, waveJingle, overDirge, bazookaLaunch, bazookaBoom;
+    AudioClip ammoChime, gradeChime, fortHit, waveHorn, waveJingle, overDirge, bazookaLaunch, bazookaBoom, stageClear;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetState()
@@ -106,6 +106,7 @@ public class GameAudio : MonoBehaviour
         ammoChime = Synth.Make("Ammo", Synth.Chime(new[] { 1318.5f, 1760f }, 0.08f, 0.3f));
         gradeChime = Synth.Make("Grade", Synth.Chime(new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, 0.09f, 0.55f));
         fortHit = Synth.Make("FortHit", Synth.Shot(0.5f, 100f, 30f, 1.1f, 9f));
+        stageClear = Synth.Make("StageClear", Synth.Chime(new[] { 523.25f, 659.25f, 783.99f, 1046.5f, 1318.5f, 1568f }, 0.13f, 1.3f));
         bazookaLaunch = Synth.Make("BazookaLaunch", Synth.Shot(0.55f, 220f, 45f, 1.1f, 12f));
         bazookaBoom = Synth.Make("BazookaBoom", Synth.Shot(1.3f, 95f, 20f, 1.3f, 5f));
         waveHorn = Synth.Make("Horn", Synth.Horn(new[] { 146.83f, 220f, 293.66f }, new[] { 0f, 0.35f, 0.7f }, new[] { 0.35f, 0.35f, 0.9f }, 0.5f));
@@ -306,6 +307,14 @@ public class GameAudio : MonoBehaviour
     {
         if (Instance == null) return;
         Instance.Play(Instance.waveJingle, EyePosition(), 0.8f, 1f);
+    }
+
+    /// <summary>ステージクリアの音:上っていく、明るい鈴の音。</summary>
+    public static void PlayStageClear()
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.stageClear, EyePosition(), 0.9f, 1f);
+        Instance.Play(Instance.waveHorn, EyePosition(), 0.6f, 1.3f);
     }
 
     public static void PlayGameOver()

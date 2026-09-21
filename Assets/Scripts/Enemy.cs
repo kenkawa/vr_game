@@ -70,10 +70,15 @@ public class Enemy : MonoBehaviour
     /// <summary>敵の影を出すか(太陽の影が入っているとき)。敵は、影だけを落とす軽い立体 1 つを持つ。</summary>
     public static bool ProxyShadows = true;
 
+    /// <summary>今、いる敵の一覧(倒れた敵は IsAlive が false)。方向マーカーが使う。</summary>
+    public static readonly System.Collections.Generic.List<Enemy> Active = new System.Collections.Generic.List<Enemy>();
+
     static Mesh goblinShadow;
     static Mesh batShadow;
 
     EnemyKind kind;
+    public bool IsAlive => target != null && !target.IsDead;
+    public EnemyKind Kind => kind;
     Vector3 standPoint;
     Vector3 lookPoint;
     float speed;
@@ -99,6 +104,9 @@ public class Enemy : MonoBehaviour
     float attackAnim = -1f;
     bool damageDone;
     bool arrived;
+
+    void OnEnable() { Active.Add(this); }
+    void OnDisable() { Active.Remove(this); }
 
     /// <summary>
     /// 敵を 1 体作る。
@@ -398,7 +406,7 @@ public class Enemy : MonoBehaviour
         }
         if (hpBar != null) UpdateHpBar();
 
-        Fort fort = Fort.Instance;
+        IStronghold fort = Stronghold.Current;
         bool fortAlive = fort != null && !fort.IsDestroyed;
 
         if (fortAlive)
@@ -435,7 +443,7 @@ public class Enemy : MonoBehaviour
         if (dist - step <= 0.05f) arrived = true;
     }
 
-    void Attack(float dt, Fort fort)
+    void Attack(float dt, IStronghold fort)
     {
         FaceTowards(lookPoint - transform.position, 6f, dt);
 
