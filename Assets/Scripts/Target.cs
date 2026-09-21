@@ -21,6 +21,8 @@ public class Target : MonoBehaviour
 
     float health;
     bool dying;
+    bool headshot;
+    Vector3 headPoint;
     Renderer[] renderers;
     Color[] baseColors;
 
@@ -71,6 +73,18 @@ public class Target : MonoBehaviour
         }
     }
 
+    /// <summary>ヘッドショット。体力に関係なく、一撃で倒す。</summary>
+    public void HeadShot()
+    {
+        if (dying) return;
+
+        headshot = true;
+        health = 0f;
+        HeadHitbox head = GetComponentInChildren<HeadHitbox>();
+        headPoint = head != null ? head.transform.position : DropPoint + Vector3.up * 0.5f;
+        StartCoroutine(Die());
+    }
+
     IEnumerator HitFlash()
     {
         SetAllColors(hitColor);
@@ -82,8 +96,16 @@ public class Target : MonoBehaviour
     {
         dying = true;
         foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
-        KillEffects.Play(DropPoint, baseColors, transform.lossyScale.x, scoreValue);
+        KillEffects.Play(DropPoint, baseColors, transform.lossyScale.x, scoreValue, headshot);
         GameAudio.PlayKill(DropPoint, transform.lossyScale.x >= 2f);
+        if (headshot)
+        {
+            // ヘッドショットは、派手に:光と火花と衝撃波、キンッという音、一瞬のスローモーション、コントローラーの強い振動
+            KillEffects.HeadshotBurst(headPoint, transform.lossyScale.x);
+            GameAudio.PlayHeadshot(headPoint);
+            HitStop.Trigger(0.12f, 0.2f);
+            if (GunSystem.Instance != null) GunSystem.Instance.PulseHaptics(1f, 0.2f);
+        }
         Killed?.Invoke(this);
 
         // 0.2 秒で小さくなって消える

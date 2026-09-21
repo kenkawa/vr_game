@@ -58,6 +58,14 @@ public class EnemyStats
 public class Enemy : MonoBehaviour
 {
     const float AttackDuration = 0.5f;
+    /// <summary>出現したとき、0 から本来の大きさまで、この秒数かけて大きくなる(いきなり現れて見えないように)。</summary>
+    const float GrowSeconds = 1.2f;
+
+    /// <summary>遠くにいるあいだの、進む速さの倍率(WaveSpawner が設定する)。</summary>
+    public static float FarSpeedBoost = 2.5f;
+    public static float FarMinSpeed = 6f;
+    public static float BoostStartMeters = 30f;
+    public static float BoostFullMeters = 70f;
 
     EnemyKind kind;
     Vector3 standPoint;
@@ -80,6 +88,7 @@ public class Enemy : MonoBehaviour
 
     float clock;
     float walkPhase;
+    float age;
     float attackTimer;
     float attackAnim = -1f;
     bool damageDone;
@@ -114,22 +123,27 @@ public class Enemy : MonoBehaviour
         var modelObject = new GameObject("Model");
         modelObject.transform.SetParent(root.transform, false);
         enemy.model = modelObject.transform;
+        modelObject.transform.localScale = Vector3.zero;   // 出現したときは 0 から、ゆっくり大きくなる(Update)
 
         if (kind == EnemyKind.Ground)
         {
             enemy.BuildGoblin(variant);
             if (variant == EnemyVariant.Armored || variant == EnemyVariant.Giant) enemy.BuildHpBar(2.05f);
+            // 体の当たり判定は、頭より下だけ。頭は別の当たり判定(HeadHitbox)にして、ヘッドショットを見分ける
             var capsule = root.AddComponent<CapsuleCollider>();
-            capsule.center = new Vector3(0f, 0.8f, 0f);
+            capsule.center = new Vector3(0f, 0.55f, 0f);
             capsule.radius = 0.45f;
-            capsule.height = 1.6f;
+            capsule.height = 1.1f;
+            enemy.AddHeadHitbox(new Vector3(0f, 1.33f, 0.05f), 0.33f);
         }
         else
         {
             enemy.BuildBat();
+            // 体の当たり判定は、頭を含まない位置にずらす。頭は別の当たり判定(HeadHitbox)
             var sphere = root.AddComponent<SphereCollider>();
-            sphere.center = Vector3.zero;
-            sphere.radius = 0.7f;
+            sphere.center = new Vector3(0f, 0f, -0.25f);
+            sphere.radius = 0.6f;
+            enemy.AddHeadHitbox(new Vector3(0f, 0.08f, 0.42f), 0.26f);
         }
 
         // 見た目を作り終えてから、体力などを Target に渡す
@@ -137,6 +151,16 @@ public class Enemy : MonoBehaviour
         float dropHeight = kind == EnemyKind.Ground ? 1f * scale : 0f;
         enemy.target.Configure(stats.health * healthMultiplier, stats.score, dropHeight, stats.bonusDrops);
         return enemy;
+    }
+
+    /// <summary>頭の当たり判定を足す。ここに当たると、ヘッドショットで一撃になる(見た目には出ない)。</summary>
+    void AddHeadHitbox(Vector3 localCenter, float radius)
+    {
+        var go = new GameObject("HeadHitbox");
+        go.transform.SetParent(model, false);
+        go.transform.localPosition = localCenter;
+        go.AddComponent<SphereCollider>().radius = radius;
+        go.AddComponent<HeadHitbox>();
     }
 
     // ----------------------------------------------------------------- 見た目
@@ -303,6 +327,11 @@ public class Enemy : MonoBehaviour
 
         float dt = Time.deltaTime;
         clock += dt;
+        if (age < GrowSeconds)
+        {
+            age += dt;
+            model.localScale = Vector3.one * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / GrowSeconds));
+        }
         if (hpBar != null) UpdateHpBar();
 
         Fort fort = Fort.Instance;
@@ -329,11 +358,15 @@ public class Enemy : MonoBehaviour
             return;
         }
 
+        // 砦から遠いあいだは、速く進む(近づくにつれて、本来の速さになる)
+        float farSpeed = Mathf.Max(speed * FarSpeedBoost, FarMinSpeed);
+        float moveSpeed = Mathf.Lerp(speed, farSpeed, Mathf.InverseLerp(BoostStartMeters, BoostFullMeters, dist));
+
         Vector3 dir = to / dist;
-        float step = Mathf.Min(dist, speed * dt);
+        float step = Mathf.Min(dist, moveSpeed * dt);
         transform.position += dir * step;
         FaceTowards(dir, 8f, dt);
-        walkPhase += dt * speed * 5f;
+        walkPhase += dt * moveSpeed * 5f;
 
         if (dist - step <= 0.05f) arrived = true;
     }

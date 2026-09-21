@@ -41,13 +41,21 @@ public class WaveSpawner : MonoBehaviour
     [Range(0f, 1f)]
     [SerializeField] float flyingShare = 0.4f;
 
-    [Header("敵の出る位置(プレイヤーの足元・正面が基準)")]
-    [Tooltip("地上の敵が出る、正面からの距離(m)")]
-    [SerializeField] float groundSpawnMinDistance = 30f;
-    [SerializeField] float groundSpawnMaxDistance = 45f;
+    [Header("敵の出る位置(プレイヤーの足元・正面が基準。遠くから近づいてくる)")]
+    [Tooltip("地上の敵が出る、正面からの距離(m)。この範囲のどこかから、歩いて近づいてくる。")]
+    [SerializeField] float groundSpawnNearMeters = 90f;
+    [SerializeField] float groundSpawnFarMeters = 120f;
     [Tooltip("空の敵が出る、正面からの距離(m)")]
-    [SerializeField] float flyingSpawnMinDistance = 35f;
-    [SerializeField] float flyingSpawnMaxDistance = 55f;
+    [SerializeField] float flyingSpawnNearMeters = 100f;
+    [SerializeField] float flyingSpawnFarMeters = 140f;
+    [Tooltip("遠くにいるあいだの、進む速さの倍率。到着までが長くなりすぎないように、遠いほど速く進む。1 なら、ずっと同じ速さ。")]
+    [SerializeField] float farSpeedBoost = 2.5f;
+    [Tooltip("遠くにいるあいだの、進む速さの下限(m/秒)。遅い敵(巨大な敵など)も、遠くでは、少なくともこの速さで進む。")]
+    [SerializeField] float farMinSpeed = 6f;
+    [Tooltip("砦の手前のこの距離(m)より遠いところから、速く進み始める。")]
+    [SerializeField] float boostStartMeters = 30f;
+    [Tooltip("砦の手前のこの距離(m)より遠いところでは、最大の速さで進む。")]
+    [SerializeField] float boostFullMeters = 70f;
     [Tooltip("正面から左右にこの角度(度)まで")]
     [SerializeField] float arcHalfAngle = 45f;
     [Tooltip("地上の敵が、外柵(砦の壁の 3.5m 手前)からどれだけ手前で止まるか(m)")]
@@ -125,6 +133,12 @@ public class WaveSpawner : MonoBehaviour
 
         // Editor でヘッドセットなしに確認するときは、頭を動かせないので、左右の範囲を狭くする
         if (PlayerView.IsEditorSimulation) arcHalfAngle = Mathf.Min(arcHalfAngle, 30f);
+
+        // 遠くの敵ほど速く進む設定を、敵に渡す
+        Enemy.FarSpeedBoost = Mathf.Max(1f, farSpeedBoost);
+        Enemy.FarMinSpeed = Mathf.Max(0f, farMinSpeed);
+        Enemy.BoostStartMeters = boostStartMeters;
+        Enemy.BoostFullMeters = Mathf.Max(boostStartMeters + 1f, boostFullMeters);
 
         var fortObject = new GameObject("Fort");
         fort = fortObject.AddComponent<Fort>();
@@ -260,7 +274,7 @@ public class WaveSpawner : MonoBehaviour
         Vector3 look = fort.Point(x, fort.GroundY + 1f, Fort.PalisadeForward);
 
         float angle = Random.Range(-arcHalfAngle, arcHalfAngle);
-        float distance = Random.Range(groundSpawnMinDistance, groundSpawnMaxDistance);
+        float distance = Random.Range(groundSpawnNearMeters, groundSpawnFarMeters);
         Vector3 dir = Quaternion.AngleAxis(angle, Vector3.up) * PlayerView.FlatForward;
         Vector3 flat = new Vector3(PlayerView.Center.x, 0f, PlayerView.Center.z) + dir * distance;
         Vector3 spawn = new Vector3(flat.x, fort.GroundY, flat.z);
@@ -277,7 +291,7 @@ public class WaveSpawner : MonoBehaviour
         Vector3 look = fort.Point(x, fort.TopY - 0.5f, Fort.FaceForward);
 
         float angle = Random.Range(-arcHalfAngle, arcHalfAngle);
-        float distance = Random.Range(flyingSpawnMinDistance, flyingSpawnMaxDistance);
+        float distance = Random.Range(flyingSpawnNearMeters, flyingSpawnFarMeters);
         Vector3 dir = Quaternion.AngleAxis(angle, Vector3.up) * PlayerView.FlatForward;
         Vector3 flat = new Vector3(PlayerView.Center.x, 0f, PlayerView.Center.z) + dir * distance;
         Vector3 spawn = new Vector3(flat.x, fort.TopY + Random.Range(4f, 14f), flat.z);

@@ -25,7 +25,7 @@ public class GameAudio : MonoBehaviour
     float lastFortHitTime = -10f;
     float lastHitTime = -10f;
 
-    AudioClip shotLight, shotHeavy, shotCharged, shotZap, emptyClick, comboBlast, enemyHit, enemyKill, enemyKillBig;
+    AudioClip shotLight, shotHeavy, shotCharged, shotZap, headshotPing, emptyClick, comboBlast, enemyHit, enemyKill, enemyKillBig;
     AudioClip ammoChime, gradeChime, fortHit, waveHorn, waveJingle, overDirge;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -95,6 +95,7 @@ public class GameAudio : MonoBehaviour
         shotHeavy = Synth.Make("ShotHeavy", Synth.Shot(0.45f, 170f, 45f, 1f, 22f));
         shotCharged = Synth.Make("ShotCharged", Synth.Charged());
         shotZap = Synth.Make("ShotZap", Synth.Zap(0.3f));
+        headshotPing = Synth.Make("Headshot", Synth.Chime(new[] { 2093f, 2637f, 3136f, 4186f }, 0.045f, 0.5f));
         emptyClick = Synth.Make("Empty", Synth.Click());
         comboBlast = Synth.Make("Combo", Synth.Combo());
         enemyHit = Synth.Make("Hit", Synth.Shot(0.14f, 320f, 130f, 0.7f, 60f));
@@ -223,6 +224,15 @@ public class GameAudio : MonoBehaviour
         if (Time.time - Instance.lastHitTime < 0.04f) return;
         Instance.lastHitTime = Time.time;
         Instance.Play(Instance.enemyHit, position, 0.6f, Random.Range(0.9f, 1.15f));
+    }
+
+    /// <summary>ヘッドショットの、高くて鋭い「キンッ」。倒した音に重ねる。</summary>
+    public static void PlayHeadshot(Vector3 position)
+    {
+        if (Instance == null) return;
+        Instance.Play(Instance.headshotPing, position, 1f, 1f);
+        Instance.Play(Instance.enemyKillBig, position, 0.6f, 1.3f);   // 短く重い破裂音
+        Instance.Play(Instance.shotZap, position, 0.5f, 1.4f);        // 光が走る音
     }
 
     public static void PlayKill(Vector3 position, bool big)

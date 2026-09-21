@@ -82,6 +82,7 @@ public class GunSystem : MonoBehaviour
     static readonly Color GradeUpColor = new Color(1f, 0.85f, 0.2f);
     static readonly Color AmmoUpColor = new Color(0.4f, 1f, 0.5f);
     static readonly Color ComboColor = new Color(0.5f, 1f, 1f);
+    static readonly Color HeadshotColor = new Color(1f, 0.35f, 0.2f);
 
     // Editor でヘッドセットがないときの、左右の銃の間隔(片側ぶん、m)。
     // ふだんは離れていて、Space キーを押している間だけ、中央に寄って「両手を合わせた」状態になる。
@@ -282,10 +283,21 @@ public class GunSystem : MonoBehaviour
         if (hasHit) DamageTarget(hit.collider, damage);
     }
 
-    static void DamageTarget(Collider col, float damage)
+    /// <summary>当たったコライダーの敵にダメージを与える。頭(HeadHitbox)に当たったら、一撃で倒す。</summary>
+    void DamageTarget(Collider col, float damage)
     {
         Target target = col.GetComponentInParent<Target>();
-        if (target != null) target.TakeDamage(damage);
+        if (target == null || target.IsDead) return;
+
+        if (col.GetComponent<HeadHitbox>() != null)
+        {
+            Debug.Log($"[GunSystem] ヘッドショット! {target.name} を一撃で倒しました");
+            target.HeadShot();
+            Announce("HEADSHOT!", HeadshotColor, 0.7f);
+            return;
+        }
+
+        target.TakeDamage(damage);
     }
 
     /// <summary>両手撃ちの弾の軌跡を、太い光の線で見せる(少しずつ細くなって消える)。</summary>

@@ -23,7 +23,7 @@ public class KillEffects : MonoBehaviour
     Color textColor;
 
     /// <summary>倒された位置(center)に、演出を出す。colors は敵の体の色、scale は敵の大きさ。</summary>
-    public static void Play(Vector3 center, Color[] colors, float scale, int score)
+    public static void Play(Vector3 center, Color[] colors, float scale, int score, bool headshot = false)
     {
         float distance = PlayerView.Eye != null ? Vector3.Distance(PlayerView.Eye.position, center) : 10f;
         // 遠いほど大きく見せる(1〜2.4 倍)
@@ -32,7 +32,29 @@ public class KillEffects : MonoBehaviour
 
         SpawnFlash(center, size);
         SpawnDebris(center, colors, size);
-        SpawnPopup(center, score, distance);
+        SpawnPopup(center, score, distance, headshot);
+    }
+
+    /// <summary>
+    /// ヘッドショットの派手な演出(頭の位置に)。大きな光の玉、金と赤の火花、
+    /// プレイヤーのほうを向いた衝撃波の輪、水平に広がる輪、真上に噴き上がる火花。
+    /// </summary>
+    public static void HeadshotBurst(Vector3 head, float scale)
+    {
+        float distance = PlayerView.Eye != null ? Vector3.Distance(PlayerView.Eye.position, head) : 10f;
+        float boost = Mathf.Lerp(1f, 2.6f, Mathf.Clamp01(distance / 40f));
+        float size = Mathf.Max(0.5f, scale) * boost;
+
+        Color gold = new Color(1f, 0.85f, 0.2f);
+        Color red = new Color(1f, 0.25f, 0.1f);
+        Vector3 toEye = PlayerView.Eye != null ? (PlayerView.Eye.position - head).normalized : Vector3.back;
+
+        SpawnFlash(head, size * 1.6f);
+        ShotBurst.Spawn(ShotBurst.Shape.Sphere, head, Vector3.up, 22, 7f * boost, 0.07f * size, gold, 0.7f, 0f, 4f, 3f);
+        ShotBurst.Spawn(ShotBurst.Shape.Sphere, head, Vector3.up, 14, 4f * boost, 0.1f * size, red, 0.8f, 0f, 3f, 3f);
+        ShotBurst.Spawn(ShotBurst.Shape.Ring, head, toEye, 16, 7f * boost, 0.08f * size, red, 0.5f, 0f, 0f, 2f);
+        ShotBurst.Spawn(ShotBurst.Shape.Ring, head, Vector3.up, 16, 6f * boost, 0.08f * size, gold, 0.6f, 0f, 0f, 2f);
+        ShotBurst.Spawn(ShotBurst.Shape.Cone, head, Vector3.up, 12, 10f * boost, 0.07f * size, gold, 0.8f, 0f, 6f, 1.5f);
     }
 
     static void SpawnFlash(Vector3 center, float size)
@@ -79,19 +101,19 @@ public class KillEffects : MonoBehaviour
         }
     }
 
-    static void SpawnPopup(Vector3 center, int score, float distance)
+    static void SpawnPopup(Vector3 center, int score, float distance, bool headshot)
     {
-        // 遠いほど文字を大きくして、読めるようにする
-        float characterSize = Mathf.Clamp(distance * 0.012f, 0.05f, 0.5f);
-        Color gold = new Color(1f, 0.85f, 0.2f);
+        // 遠いほど文字を大きくして、読めるようにする(ヘッドショットは、さらに大きく、赤く)
+        float characterSize = Mathf.Clamp(distance * 0.012f, 0.05f, 0.5f) * (headshot ? 1.35f : 1f);
+        Color gold = headshot ? new Color(1f, 0.3f, 0.15f) : new Color(1f, 0.85f, 0.2f);
 
         TextMesh tm = HudText.Create("KillScore", null, 64, characterSize, gold);
-        tm.text = "+" + score;
+        tm.text = headshot ? "HEADSHOT!\n+" + score : "+" + score;
         tm.transform.position = center + Vector3.up * 0.6f;
 
         var fx = tm.gameObject.AddComponent<KillEffects>();
         fx.mode = Mode.Popup;
-        fx.life = 1f;
+        fx.life = headshot ? 1.4f : 1f;
         fx.text = tm;
         fx.textColor = gold;
         fx.velocity = Vector3.up * Mathf.Max(1.5f, distance * 0.05f);
