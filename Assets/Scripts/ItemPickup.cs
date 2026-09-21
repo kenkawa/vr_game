@@ -34,9 +34,9 @@ public class ItemPickup : MonoBehaviour
 
         go.transform.position = position;
         go.transform.localScale = isGrade ? Vector3.one * 0.2f : new Vector3(0.12f, 0.1f, 0.12f);
-        go.GetComponent<Renderer>().material.color = isGrade
+        Paint.Apply(go.GetComponent<Renderer>(), isGrade
             ? new Color(1f, 0.8f, 0.1f)      // 金色: グレードアップ
-            : new Color(0.2f, 1f, 0.4f);     // 緑: 残弾回復
+            : new Color(0.2f, 1f, 0.4f));    // 緑: 残弾回復
 
         var pickup = go.AddComponent<ItemPickup>();
         pickup.kind = kind;

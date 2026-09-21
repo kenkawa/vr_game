@@ -152,7 +152,7 @@ public class Enemy : MonoBehaviour
         go.transform.localPosition = localPosition;
         go.transform.localRotation = Quaternion.Euler(localEuler);
         go.transform.localScale = localScale;
-        go.GetComponent<Renderer>().material.color = color;
+        Paint.Apply(go.GetComponent<Renderer>(), color);
         return go.transform;
     }
 

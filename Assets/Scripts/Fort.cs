@@ -189,7 +189,7 @@ public class Fort : MonoBehaviour
         }
 
         var rend = go.GetComponent<Renderer>();
-        rend.material.color = color;
+        Paint.Apply(rend, color);
         if (flashesOnDamage)
         {
             stone.Add(rend);
@@ -205,6 +205,7 @@ public class Fort : MonoBehaviour
         Health = Mathf.Max(0f, Health - damage);
         Damaged?.Invoke(Health);
         StartCoroutine(FlashRed());
+        GameAudio.PlayFortHit(Point(0f, TopY - 1.5f, FaceForward + 0.5f));
         if (GunSystem.Instance != null) GunSystem.Instance.PulseHaptics(0.8f, 0.12f);
 
         if (IsDestroyed) Broken?.Invoke();

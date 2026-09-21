@@ -42,7 +42,7 @@ public class KillEffects : MonoBehaviour
         Destroy(go.GetComponent<Collider>());
         go.transform.position = center;
         go.transform.localScale = Vector3.one * size * 0.4f;
-        go.GetComponent<Renderer>().material.color = Color.white;
+        Paint.Apply(go.GetComponent<Renderer>(), Color.white);
 
         var fx = go.AddComponent<KillEffects>();
         fx.mode = Mode.Flash;
@@ -61,7 +61,7 @@ public class KillEffects : MonoBehaviour
             Destroy(go.GetComponent<Collider>());
 
             Color color = (colors != null && colors.Length > 0) ? colors[Random.Range(0, colors.Length)] : Color.white;
-            go.GetComponent<Renderer>().material.color = color;
+            Paint.Apply(go.GetComponent<Renderer>(), color);
 
             float piece = Random.Range(0.08f, 0.2f) * size;
             go.transform.position = center + Random.insideUnitSphere * 0.2f * size;

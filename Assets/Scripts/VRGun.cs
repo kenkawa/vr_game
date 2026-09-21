@@ -163,7 +163,7 @@ public class VRGun : MonoBehaviour
         part.transform.localScale = scale;
         part.transform.localPosition = localPos;
         part.transform.localEulerAngles = localEuler;
-        part.GetComponent<Renderer>().material.color = color;
+        Paint.Apply(part.GetComponent<Renderer>(), color);
         return part;
     }
 
@@ -347,13 +347,14 @@ public class VRGun : MonoBehaviour
     {
         cooldownUntil = Time.time + cooldownSeconds;
         fireFlashUntil = Time.time + 0.06f + 0.1f * charge01;
-        StartCoroutine(Haptic(0.4f + 0.6f * charge01, 0.05f + 0.1f * charge01));
+        StartCoroutine(Haptic(0.4f + 0.6f * charge01, 0.05f + 0.1f * charge01 + 0.2f * Mathf.InverseLerp(0.6f, 1f, charge01)));
     }
 
     /// <summary>弾がないときの演出。</summary>
     public void PlayEmpty()
     {
         ShowMessage("NO AMMO", new Color(1f, 0.3f, 0.3f), 0.8f);
+        GameAudio.PlayEmpty(transform.position);
         StartCoroutine(Haptic(0.2f, 0.03f));
     }
 

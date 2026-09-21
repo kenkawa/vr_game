@@ -19,6 +19,15 @@ public class WaveSpawner : MonoBehaviour
     [Tooltip("ウェーブをクリアするたびに、砦の耐久値が回復する量。")]
     [SerializeField] float repairPerWave = 10f;
 
+    [Header("音")]
+    [Tooltip("BGM を流すか。")]
+    [SerializeField] bool playBgm = true;
+    [Range(0f, 1f)]
+    [SerializeField] float bgmVolume = 0.35f;
+    [Tooltip("効果音の大きさ(0〜1)。")]
+    [Range(0f, 1f)]
+    [SerializeField] float sfxVolume = 1f;
+
     [Header("ウェーブ")]
     [SerializeField] int firstWaveCount = 3;
     [SerializeField] int countIncreasePerWave = 2;
@@ -80,6 +89,7 @@ public class WaveSpawner : MonoBehaviour
 
     Fort fort;
     TextMesh hud;
+    string diagnostics = "";
     int wave;
     int aliveCount;
     int score;
@@ -122,7 +132,18 @@ public class WaveSpawner : MonoBehaviour
         fort.Damaged += OnFortDamaged;
         fort.Broken += OnFortBroken;
 
+        // 音(効果音と BGM)
+        GameAudio.Ensure(sfxVolume, bgmVolume);
+        if (playBgm) GameAudio.StartBgm();
+
+        // 実機では、座っていても立っていても、目の高さが砦の上で一定になるように補正する
+        if (!PlayerView.IsEditorSimulation && GetComponent<HeightCalibrator>() == null)
+        {
+            gameObject.AddComponent<HeightCalibrator>();
+        }
+
         CreateHud();
+        if (!PlayerView.IsEditorSimulation) StartCoroutine(ShowDiagnostics());
         StartCoroutine(RunWaves());
     }
 
@@ -140,6 +161,7 @@ public class WaveSpawner : MonoBehaviour
             int flyers = wave >= flyingStartWave ? Mathf.RoundToInt(count * flyingShare) : 0;
 
             if (GunSystem.Instance != null) GunSystem.Instance.OnWaveStart();
+            GameAudio.PlayWaveStart();
             aliveCount = count;
             Debug.Log($"[WaveSpawner] WAVE {wave}: 敵 {count} 体(空 {flyers} 体)、大きさ {CurrentScale() * 100f:0}%、速さ x{CurrentSpeedMultiplier():0.00}");
             RefreshHud();
@@ -151,6 +173,7 @@ public class WaveSpawner : MonoBehaviour
             if (gameOver) yield break;
 
             fort.Repair(repairPerWave);
+            GameAudio.PlayWaveClear();
             RefreshHud($"WAVE {wave} CLEAR!");
             yield return new WaitForSeconds(timeBetweenWaves);
         }
@@ -299,6 +322,8 @@ public class WaveSpawner : MonoBehaviour
     IEnumerator GameOver()
     {
         Debug.Log($"[WaveSpawner] GAME OVER: WAVE {wave}, SCORE {score}");
+        GameAudio.StopBgm();
+        GameAudio.PlayGameOver();
 
         foreach (var enemy in FindObjectsByType<Enemy>()) Destroy(enemy.gameObject);
 
@@ -321,6 +346,24 @@ public class WaveSpawner : MonoBehaviour
 
     // ----------------------------------------------------------------- 表示
 
+    /// <summary>実機での確認用。高さ補正のあと(起動の約 4.5 秒後)から約 15 秒間、頭の高さなどを表示の下に出す。</summary>
+    IEnumerator ShowDiagnostics()
+    {
+        yield return new WaitForSeconds(4.5f);
+
+        float eyeHeight = PlayerView.Eye.position.y - PlayerView.FloorY;
+        string origin = OVRManager.instance != null ? OVRManager.instance.trackingOriginType.ToString() : "?";
+        string material = Paint.Template != null ? "OK" : "NONE";
+        string adjusted = HeightCalibrator.Calibrated ? $"{HeightCalibrator.LastOffset:+0.00;-0.00}m" : "NONE";
+        diagnostics = $"\nEYE {eyeHeight:0.00}m  ADJ {adjusted}  ORIGIN {origin}  MAT {material}\nHOLD BOTH GRIPS 1s TO ADJUST HEIGHT";
+        Debug.Log($"[WaveSpawner] 頭の高さ(砦の床から)={eyeHeight:0.00} m、補正量={adjusted}、トラッキング原点={origin}、材質(PrimitiveMat)={material}");
+        RefreshHud();
+
+        yield return new WaitForSeconds(15f);
+        diagnostics = "";
+        RefreshHud();
+    }
+
     void CreateHud()
     {
         hud = HudText.Create("WaveHud", null, 64, 0.05f, Color.white);
@@ -336,6 +379,6 @@ public class WaveSpawner : MonoBehaviour
         if (title == null) title = $"WAVE {wave}";
         float ratio = fort.MaxHealth > 0f ? fort.Health / fort.MaxHealth : 0f;
         hud.color = ratio <= 0.3f ? new Color(1f, 0.4f, 0.35f) : Color.white;
-        hud.text = $"{title}   SCORE {score}\nFORT {Mathf.CeilToInt(fort.Health)}/{Mathf.CeilToInt(fort.MaxHealth)}\nENEMY SIZE {CurrentScale() * 100f:0}%";
+        hud.text = $"{title}   SCORE {score}\nFORT {Mathf.CeilToInt(fort.Health)}/{Mathf.CeilToInt(fort.MaxHealth)}\nENEMY SIZE {CurrentScale() * 100f:0}%{diagnostics}";
     }
 }

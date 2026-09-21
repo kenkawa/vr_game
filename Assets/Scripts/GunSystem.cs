@@ -29,8 +29,9 @@ public class GunSystem : MonoBehaviour
     [SerializeField] float fireInterval = 0.15f;
 
     [Header("両手撃ち")]
-    [Tooltip("両手がこの距離(m)以内のとき、両手撃ちになる。")]
-    [SerializeField] float comboDistance = 0.25f;
+    [Tooltip("2 丁の銃(コントローラー)の中心どうしがこの距離(m)以内、つまり、手がくっついているくらいのとき、両手撃ちになる。"
+             + "コントローラーを左右でくっつけると、中心は約 8〜12cm 離れる。発動しにくいときは 0.15 くらいまで上げる。")]
+    [SerializeField] float comboDistance = 0.12f;
     [Tooltip("2 丁ぶんの威力を足したものに、さらにかける倍率。")]
     [SerializeField] float comboMultiplier = 1.5f;
     [Tooltip("両手撃ちの弾の太さ(半径 m)。太いほど当たりやすい。")]
@@ -85,7 +86,7 @@ public class GunSystem : MonoBehaviour
     // Editor でヘッドセットがないときの、左右の銃の間隔(片側ぶん、m)。
     // ふだんは離れていて、Space キーを押している間だけ、中央に寄って「両手を合わせた」状態になる。
     const float EditorApartHalfGap = 0.38f;
-    const float EditorTogetherHalfGap = 0.05f;
+    const float EditorTogetherHalfGap = 0.03f;   // 2 丁の中心が 6cm(手がくっついた状態)
     /// <summary>両手撃ちの判定を、離した直後もこの秒数だけ保つ(手がずれて撃ち損ねないように)。</summary>
     const float ComboGraceSeconds = 0.15f;
 
@@ -235,6 +236,7 @@ public class GunSystem : MonoBehaviour
         Vector3 muzzle = gun.Muzzle;
         Vector3 end = gun.HasHit ? gun.LastHit.point : muzzle + gun.Forward * 100f;
         ShotEffects.Fire(muzzle, end, gun.HasHit, charge01);
+        GameAudio.PlayShot(muzzle, charge01);
 
         if (gun.HasHit) DamageTarget(gun.LastHit.collider, damage);
     }
@@ -269,6 +271,7 @@ public class GunSystem : MonoBehaviour
         float length = hasHit ? hit.distance : 100f;
 
         ShowBeam(origin, direction, length);
+        GameAudio.PlayCombo(origin);
 
         float bigger = Mathf.Max(chargeL, chargeR);
         left.PlayShotFeedback(bigger, fireInterval * 2f);
@@ -317,6 +320,13 @@ public class GunSystem : MonoBehaviour
         if (right != null) right.PlayHapticPulse(amplitude, seconds);
     }
 
+    /// <summary>左右のコントローラーの上に、短いメッセージを出す(高さ補正の完了など)。</summary>
+    public void Announce(string message, Color color, float seconds)
+    {
+        if (left != null) left.ShowMessage(message, color, seconds);
+        if (right != null) right.ShowMessage(message, color, seconds);
+    }
+
     /// <summary>ウェーブが始まるときに呼ばれる。残弾が少なすぎれば補充する。</summary>
     public void OnWaveStart()
     {
@@ -339,6 +349,7 @@ public class GunSystem : MonoBehaviour
             ApplyGradeVisuals();
             message = "GRADE UP!";
             color = GradeUpColor;
+            GameAudio.PlayPickup(true);
         }
         else
         {
@@ -346,6 +357,7 @@ public class GunSystem : MonoBehaviour
             Ammo = Mathf.Min(maxAmmo, Ammo + ammoPerPack);
             message = "AMMO +" + ammoPerPack;
             color = AmmoUpColor;
+            GameAudio.PlayPickup(false);
         }
 
         RefreshLabels();

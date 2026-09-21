@@ -66,6 +66,7 @@ public class Target : MonoBehaviour
         }
         else
         {
+            GameAudio.PlayHit(transform.position);
             StartCoroutine(HitFlash());
         }
     }
@@ -82,6 +83,7 @@ public class Target : MonoBehaviour
         dying = true;
         foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
         KillEffects.Play(DropPoint, baseColors, transform.lossyScale.x, scoreValue);
+        GameAudio.PlayKill(DropPoint, transform.lossyScale.x >= 2f);
         Killed?.Invoke(this);
 
         // 0.2 秒で小さくなって消える
