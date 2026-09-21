@@ -19,6 +19,9 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] float fortMaxHealth = 100f;
     [Tooltip("砦の高さ(m)。プレイヤーは、この高さの上に立つ。")]
     [SerializeField] float fortHeightMeters = 6f;
+    [Tooltip("外柵(砦の前の木の柵)の高さ(m。杭の先まで)。低いほど、柵のすぐ外の敵が、足元まで見える。柵に当たり判定はなく、弾は通り抜ける。0 にすると、柵を作らない。")]
+    [Range(0f, 2f)]
+    [SerializeField] float fortFenceHeight = 0.8f;
     [Tooltip("ウェーブをクリアするたびに、砦の耐久値が回復する量。")]
     [SerializeField] float repairPerWave = 10f;
 
@@ -37,9 +40,15 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] float towerMaxHealth = 120f;
     [Tooltip("塔の高さ(m)。プレイヤーは、この高さの頂上に立つ。")]
     [SerializeField] float towerHeightMeters = 12f;
+    [Tooltip("頂上の足場の半径(m)。小さいほど、狭い足場に立つ感じが強くなり、塔の足元の近くまで、地面が見える(見えはじめる距離は、半径の約 8.5 倍。0.9 なら約 7.7m)。既定は 0.9(以前は 1.6)。")]
+    [Range(0.5f, 2f)]
+    [SerializeField] float towerPlatformRadius = 0.9f;
     [Tooltip("外柵(塔をぐるりと囲む木の柵)の半径(m)。地上の敵は、この外側で止まって、柵と塔を攻撃する。"
-             + "頂上の真ん中からは、塔から約 13m 以内の地面は、足場に隠れて見えないので、それより外に置いてある。")]
+             + "頂上の真ん中からは、足場の半径の約 8.5 倍(足場 0.9m なら約 7.7m)より近い地面は、足場に隠れて見えないので、それより外に置く。近づけたいときは、この値を 10 くらいまで下げられる。")]
     [SerializeField] float towerFenceRadius = 15.5f;
+    [Tooltip("外柵の高さ(m。杭の先まで)。低いほど、柵のすぐ外の敵の足元まで見える。0.5 以下なら、頂上から、いちばん手前の敵も全身が見える。0 にすると、柵を作らない。")]
+    [Range(0f, 2f)]
+    [SerializeField] float towerFenceHeight = 0.5f;
     [Tooltip("空の敵が、頂上のまわりを飛ぶ半径(m)の範囲(塔の中心軸から)。")]
     [SerializeField] float towerFlyMinRadius = 3.2f;
     [SerializeField] float towerFlyMaxRadius = 5f;
@@ -73,6 +82,13 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] float hazeDensity = 0.0025f;
     [Tooltip("空の星の数。0 なら、月も星も出ない(昼)。1 以上で、夜の空になる。")]
     [SerializeField] int starTotal = 0;
+
+    [Header("敵の見つけやすさ")]
+    [Tooltip("地面の明るさ(1 = 元のまま)。小さいほど地面が暗くなり、明るい色の敵が目立つ。")]
+    [Range(0.3f, 1f)]
+    [SerializeField] float groundBrightness = 0.65f;
+    [Tooltip("地上の敵の足元に、赤く光る輪を出す。地面の色と敵の色が似ていても、どこにいるか分かる。")]
+    [SerializeField] bool enemyGroundRing = true;
 
     [Header("文字の表示(ウェーブ・スコア・砦の耐久値)")]
     [Tooltip("表示の方角(度)。正面が 0、左が -、右が +。絶対値を大きくするほど、視界の端に寄る。")]
@@ -200,6 +216,7 @@ public class WaveSpawner : MonoBehaviour
         // 空・光・霧(砦より先に整える)
         Atmosphere.Build(sunAngleFromFront, sunHeightAngle, castSunShadows, hazeDensity, starTotal);
         Enemy.ProxyShadows = castSunShadows;
+        Enemy.GroundRing = enemyGroundRing;
 
         // 最初の舞台(確認用に startAtStage を 2 にすると、塔から始まる)
         if (startAtStage >= 2 && includeTowerStage) BuildTower();
@@ -244,6 +261,8 @@ public class WaveSpawner : MonoBehaviour
         fort = fortObject.AddComponent<Fort>();
         fort.TorchLights = torchGlowLights;
         fort.CastShadows = castSunShadows;
+        fort.GroundBrightness = groundBrightness;
+        fort.FenceHeight = fortFenceHeight;
         fort.Build(fortMaxHealth, fortHeightMeters);
 
         stage = 1;
@@ -255,7 +274,8 @@ public class WaveSpawner : MonoBehaviour
     {
         var towerObject = new GameObject("Tower");
         tower = towerObject.AddComponent<Tower>();
-        tower.Build(towerMaxHealth, towerHeightMeters, towerFenceRadius);
+        tower.GroundBrightness = groundBrightness;
+        tower.Build(towerMaxHealth, towerHeightMeters, towerFenceRadius, towerFenceHeight, towerPlatformRadius);
 
         stage = 2;
         stronghold = tower;

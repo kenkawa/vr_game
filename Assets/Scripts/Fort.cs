@@ -62,6 +62,15 @@ public class Fort : MonoBehaviour, IStronghold
     public bool TorchLights { get; set; } = true;
     /// <summary>砦と柵が影を落とすか(太陽の影が切れているときは、意味がない)。Build の前に設定する。</summary>
     public bool CastShadows { get; set; } = true;
+    /// <summary>地面の明るさ(1 = 元のまま)。小さいほど暗くなって、明るい色の敵が目立つ。Build の前に設定する。</summary>
+    public float GroundBrightness { get; set; } = 1f;
+    /// <summary>外柵の高さ(m。杭の先まで)。低いほど、柵のすぐ外の敵が、足元まで見える。0 なら柵を作らない。Build の前に設定する。</summary>
+    public float FenceHeight { get; set; } = 0.8f;
+
+    Color Darken(Color c)
+    {
+        return new Color(c.r * GroundBrightness, c.g * GroundBrightness, c.b * GroundBrightness, 1f);
+    }
 
     /// <summary>ダメージを受けたときに通知される(残りの耐久値)。</summary>
     public event Action<float> Damaged;
@@ -129,9 +138,9 @@ public class Fort : MonoBehaviour, IStronghold
 
         // 地面(草の模様)と、正面へ伸びる土の道(荷車のあとつき)
         AddBlock("Ground", PrimitiveType.Cube, Point(0f, ground - 0.5f, 0f), new Vector3(900f, 1f, 900f),
-            GroundTint, false, true, ProcTex.Grass(), 150f, 150f);   // 当たり判定あり:銃やバズーカが地面に当たる(バズーカは地面で爆発する)
+            Darken(GroundTint), false, true, ProcTex.Grass(), 150f, 150f);   // 当たり判定あり:銃やバズーカが地面に当たる(バズーカは地面で爆発する)
         AddBlock("Road", PrimitiveType.Cube, Point(0f, ground + 0.02f, FaceForward + 110f), new Vector3(7f, 0.04f, 220f),
-            RoadTint, false, false, ProcTex.Dirt(), 1f, 17f);
+            Darken(RoadTint), false, false, ProcTex.Dirt(), 1f, 17f);
 
         // 砦の本体(石のレンガ)と、プレイヤーが立つ床(敷石)。正面の壁の面は、足元から FaceForward の位置
         float bodyDepth = 5f;
@@ -242,25 +251,25 @@ public class Fort : MonoBehaviour, IStronghold
             AddShield(gold, red, cube, w - 0.42f, top + 0.55f, shieldZ);
         }
 
-        // 外柵(木の柵)。とがった杭を並べて、縄で結ぶ。地上の敵は、この柵の前まで来て、柵と砦を攻撃する
+        // 外柵(木の柵)。視界と弾をさえぎらないように、低くて、すき間のある柵にする(高さは FenceHeight。0 なら作らない)。
+        // 当たり判定はなし(弾やバズーカは、柵を通り抜けて、後ろの敵に当たる)。地上の敵は、この柵の前まで来て、柵と砦を攻撃する
         float fenceHalf = w + 1.5f;
-        for (float px = -fenceHalf; px <= fenceHalf + 0.01f; px += 0.55f)
+        if (FenceHeight > 0.05f)
         {
-            float postHeight = 1.5f + 0.4f * Mathf.Abs(Mathf.Sin(px * 12.9898f));
-            Post(posts, cyl6, px, ground, PalisadeForward, 0.3f, postHeight);
-            posts.Add(cone6, Point(px, ground + postHeight, PalisadeForward), facing, new Vector3(0.3f, 0.35f, 0.3f));
-            Post(ropes, cyl6, px, ground + 0.55f, PalisadeForward, 0.34f, 0.07f);
-            Post(ropes, cyl6, px, ground + 1.15f, PalisadeForward, 0.34f, 0.07f);
+            float tip = Mathf.Min(0.18f, FenceHeight * 0.4f);
+            for (float px = -fenceHalf; px <= fenceHalf + 0.01f; px += 0.9f)
+            {
+                float postHeight = FenceHeight * (0.85f + 0.15f * Mathf.Abs(Mathf.Sin(px * 12.9898f))) - tip;
+                Post(posts, cyl6, px, ground, PalisadeForward, 0.2f, postHeight);
+                posts.Add(cone6, Point(px, ground + postHeight, PalisadeForward), facing, new Vector3(0.2f, tip, 0.2f));
+            }
+            Box(ropes, cube, 0f, ground + FenceHeight * 0.55f, PalisadeForward - 0.1f, fenceHalf * 2f + 0.4f, 0.07f, 0.07f);
         }
-        AddBlock("FenceBeamLow", PrimitiveType.Cube, Point(0f, ground + 0.5f, PalisadeForward - 0.17f),
-            new Vector3(fenceHalf * 2f + 0.4f, 0.12f, 0.1f), DarkWoodColor, true, false);
-        AddBlock("FenceBeamHigh", PrimitiveType.Cube, Point(0f, ground + 1.1f, PalisadeForward - 0.17f),
-            new Vector3(fenceHalf * 2f + 0.4f, 0.12f, 0.1f), DarkWoodColor, true, false);
 
-        // 柵の内側に、かがり火(光る炎だけ。光源は付けない)
+        // 柵の内側に、低いかがり火(光る炎だけ。光源は付けない)。柵のすぐ外の敵への視線をさえぎらないように、低くして、少し内側に置く
         foreach (float fx in new[] { -2.6f, 2.6f })
         {
-            BuildWatchFire(Point(fx, ground, PalisadeForward - 0.8f), wood, iron, cyl8);
+            BuildWatchFire(Point(fx, ground, PalisadeForward - 1.3f), wood, iron, cyl8);
         }
 
         // まとめた飾りを、それぞれ 1 つの立体にして出す
@@ -372,14 +381,14 @@ public class Fort : MonoBehaviour, IStronghold
         FlameFlicker.Create(transform, Point(x, y + 0.02f, f + 0.4f), 0.9f, TorchLights ? 2.4f : 0f, 3);
     }
 
-    /// <summary>柵の内側の、かがり火(高い柱の上で、炎が燃える)。</summary>
+    /// <summary>柵の内側の、低いかがり火(柱の上で、炎が燃える)。</summary>
     void BuildWatchFire(Vector3 basePosition, MeshKit.Batch wood, MeshKit.Batch iron, Mesh cyl8)
     {
         float x = ToRight(basePosition);
         float f = ToForward(basePosition);
-        Post(wood, cyl8, x, basePosition.y, f, 0.14f, 2.0f);
-        Post(iron, cyl8, x, basePosition.y + 2.0f, f, 0.34f, 0.08f);
-        FlameFlicker.Create(transform, basePosition + Vector3.up * 2.1f, 1.1f, 0f, 2);
+        Post(wood, cyl8, x, basePosition.y, f, 0.14f, 1.0f);
+        Post(iron, cyl8, x, basePosition.y + 1.0f, f, 0.34f, 0.08f);
+        FlameFlicker.Create(transform, basePosition + Vector3.up * 1.1f, 0.9f, 0f, 2);
     }
 
     void AddShield(MeshKit.Batch gold, MeshKit.Batch red, Mesh cube, float x, float y, float f)

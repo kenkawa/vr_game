@@ -69,6 +69,8 @@ public class Enemy : MonoBehaviour
     public static float BoostFullMeters = 70f;
     /// <summary>敵の影を出すか(太陽の影が入っているとき)。敵は、影だけを落とす軽い立体 1 つを持つ。</summary>
     public static bool ProxyShadows = true;
+    /// <summary>地上の敵の足元に、赤く光る輪を付けるか(地面と敵の色が似ていても、見つけやすくする)。</summary>
+    public static bool GroundRing = true;
 
     /// <summary>今、いる敵の一覧(倒れた敵は IsAlive が false)。方向マーカーが使う。</summary>
     public static readonly System.Collections.Generic.List<Enemy> Active = new System.Collections.Generic.List<Enemy>();
@@ -142,6 +144,7 @@ public class Enemy : MonoBehaviour
         if (kind == EnemyKind.Ground)
         {
             enemy.BuildGoblin(variant);
+            if (GroundRing) enemy.AddGroundRing();
             if (variant == EnemyVariant.Armored || variant == EnemyVariant.Giant) enemy.BuildHpBar(2.05f);
             // 体の当たり判定は、頭より下だけ。頭は別の当たり判定(HeadHitbox)にして、ヘッドショットを見分ける
             var capsule = root.AddComponent<CapsuleCollider>();
@@ -168,6 +171,62 @@ public class Enemy : MonoBehaviour
         float dropHeight = kind == EnemyKind.Ground ? 1f * scale : 0f;
         enemy.target.Configure(stats.health * healthMultiplier, stats.score, dropHeight, stats.bonusDrops);
         return enemy;
+    }
+
+
+    // ----------------------------------------------------------------- 足元の輪(見つけやすさ)
+
+    static Mesh ringMesh;
+
+    /// <summary>平らな輪(ドーナツ型)の Mesh。地面に置く。上から見て、表も裏も見えるように、両面を作る。</summary>
+    static Mesh RingMesh()
+    {
+        if (ringMesh != null) return ringMesh;
+
+        const int segments = 28;
+        const float outer = 0.8f;
+        const float inner = 0.62f;
+        var vertices = new Vector3[segments * 2];
+        var normals = new Vector3[segments * 2];
+        var triangles = new int[segments * 12];
+        for (int i = 0; i < segments; i++)
+        {
+            float a = i * 2f * Mathf.PI / segments;
+            vertices[i * 2] = new Vector3(Mathf.Sin(a) * outer, 0f, Mathf.Cos(a) * outer);
+            vertices[i * 2 + 1] = new Vector3(Mathf.Sin(a) * inner, 0f, Mathf.Cos(a) * inner);
+            normals[i * 2] = Vector3.up;
+            normals[i * 2 + 1] = Vector3.up;
+
+            int o0 = i * 2, i0 = i * 2 + 1;
+            int o1 = ((i + 1) % segments) * 2, i1 = ((i + 1) % segments) * 2 + 1;
+            int t = i * 12;
+            // 上から見て表になる向き
+            triangles[t + 0] = o0; triangles[t + 1] = o1; triangles[t + 2] = i1;
+            triangles[t + 3] = o0; triangles[t + 4] = i1; triangles[t + 5] = i0;
+            // 裏向き(向きを間違えても消えないように)
+            triangles[t + 6] = o0; triangles[t + 7] = i1; triangles[t + 8] = o1;
+            triangles[t + 9] = o0; triangles[t + 10] = i0; triangles[t + 11] = i1;
+        }
+
+        ringMesh = new Mesh { name = "EnemyRing" };
+        ringMesh.vertices = vertices;
+        ringMesh.normals = normals;
+        ringMesh.triangles = triangles;
+        ringMesh.RecalculateBounds();
+        return ringMesh;
+    }
+
+    /// <summary>足元に、赤く光る輪を付ける。地面の色と敵の色が似ていても、どこにいるか分かるようにする(1 を超える色で、光って見せる)。</summary>
+    void AddGroundRing()
+    {
+        var go = new GameObject("GroundRing");
+        go.transform.SetParent(model, false);
+        go.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+        go.AddComponent<MeshFilter>().sharedMesh = RingMesh();
+        var rend = go.AddComponent<MeshRenderer>();
+        Paint.Apply(rend, new Color(2.6f, 0.5f, 0.25f));
+        rend.shadowCastingMode = ShadowCastingMode.Off;
+        rend.receiveShadows = false;
     }
 
     /// <summary>頭の当たり判定を足す。ここに当たると、ヘッドショットで一撃になる(見た目には出ない)。</summary>
@@ -257,8 +316,9 @@ public class Enemy : MonoBehaviour
 
     void BuildGoblin(EnemyVariant variant)
     {
-        Color skin = new Color(0.38f, 0.62f, 0.25f);
-        Color darkSkin = new Color(0.28f, 0.48f, 0.2f);
+        // 地面が暗い色なので、敵の肌は明るく鮮やかにして、目立たせる
+        Color skin = new Color(0.5f, 0.8f, 0.32f);
+        Color darkSkin = new Color(0.36f, 0.62f, 0.24f);
         Color cloth = new Color(0.45f, 0.3f, 0.15f);
         Color wood = new Color(0.4f, 0.25f, 0.12f);
         Color darkWood = new Color(0.3f, 0.18f, 0.08f);
@@ -267,14 +327,14 @@ public class Enemy : MonoBehaviour
 
         if (variant == EnemyVariant.Giant)
         {
-            skin = new Color(0.62f, 0.5f, 0.36f);
-            darkSkin = new Color(0.5f, 0.4f, 0.28f);
+            skin = new Color(0.8f, 0.6f, 0.42f);
+            darkSkin = new Color(0.66f, 0.48f, 0.32f);
             cloth = new Color(0.5f, 0.15f, 0.12f);
         }
         else if (variant == EnemyVariant.Runner)
         {
-            skin = new Color(0.65f, 0.78f, 0.25f);
-            darkSkin = new Color(0.5f, 0.65f, 0.2f);
+            skin = new Color(0.85f, 0.95f, 0.3f);
+            darkSkin = new Color(0.68f, 0.8f, 0.24f);
             eye = new Color(3f, 2.6f, 0.5f);
         }
 
@@ -367,8 +427,8 @@ public class Enemy : MonoBehaviour
 
     void BuildBat()
     {
-        Color fur = new Color(0.25f, 0.15f, 0.3f);
-        Color wing = new Color(0.4f, 0.2f, 0.45f);
+        Color fur = new Color(0.38f, 0.24f, 0.46f);
+        Color wing = new Color(0.56f, 0.32f, 0.64f);
         Color eye = new Color(3f, 0.35f, 0.25f);
 
         Part(model, PrimitiveType.Sphere, "Body", Vector3.zero, new Vector3(0.5f, 0.42f, 0.7f), fur);
